@@ -1,0 +1,86 @@
+/*
+ * Sticky topbar, mirroring VE's own .ve-ui-positionedTargetToolbar-floatable
+ * (lib/ve/src/ui/styles/ve.ui.Toolbar.less): `position: sticky; top: 0;` is what makes it read
+ * as a fixed application bar instead of a block sitting in the normal page flow. The tools/
+ * actions split inside is handled by OOUI's own .oo-ui-toolbar-tools / .oo-ui-toolbar-actions
+ * floats (built in, via `{ actions: true }` on the Toolbar) — no custom flex layout needed here.
+ */
+.akn-editor-toolbar {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	margin-bottom: 1em;
+}
+
+/*
+ * Save/Cancel must fill the toolbar's full height, like VE's own save button, instead of
+ * floating at their own (shorter) natural button height inside a taller bar. `.oo-ui-toolbar-bar`
+ * and `.oo-ui-toolbar-actions` are float-based by default (see oojs-ui-toolbars.js); scoped to
+ * our own toolbar only, not overridden globally, so other OOUI toolbars on the page are unaffected.
+ */
+.akn-editor-toolbar .oo-ui-toolbar-bar {
+	display: flex;
+	align-items: stretch;
+}
+
+.akn-editor-toolbar .oo-ui-toolbar-actions {
+	display: flex;
+	align-items: stretch;
+	float: none;
+	/* Push to the far right of the flex bar instead of sitting right after the tool icons
+	 * (both .oo-ui-toolbar-tools and .oo-ui-toolbar-actions float left by default). */
+	margin-left: auto;
+}
+
+.akn-editor-toolbar .oo-ui-toolbar-actions .oo-ui-buttonGroupWidget {
+	display: flex;
+	height: 100%;
+	margin: 0;
+}
+
+.akn-editor-toolbar .oo-ui-toolbar-actions .oo-ui-buttonElement {
+	display: flex;
+}
+
+.akn-editor-toolbar .oo-ui-toolbar-actions .oo-ui-buttonElement-button {
+	height: 100%;
+	display: flex;
+	align-items: center;
+}
+
+.akn-editor-outline {
+	width: 100%;
+}
+
+.akn-editor-dialog-heading {
+	margin: 1.5em 0 0.5em 0;
+}
+
+.akn-editor-dialog-heading:first-child {
+	margin-top: 0;
+}
+
+.akn-editor-attr-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25em;
+}
+
+.akn-editor-attr-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+}
+
+.akn-editor-attr-row > .oo-ui-textInputWidget {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+.akn-editor-dialog-content {
+	overflow-x: auto;
+}
+
+.akn-editor-inline-toolbar {
+	margin-bottom: 0.25em;
+}

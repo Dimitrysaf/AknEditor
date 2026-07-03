@@ -1,0 +1,146 @@
+{
+	"name": "AknEditor",
+	"namemsg": "aknedit-extensionname",
+	"version": "0.1.0",
+	"author": [
+		"Dimitrys"
+	],
+	"url": "https://www.mediawiki.org/wiki/Extension:AknEditor",
+	"descriptionmsg": "aknedit-desc",
+	"license-name": "GPL-2.0-or-later",
+	"type": "other",
+	"requires": {
+		"MediaWiki": ">= 1.43.0",
+		"platform": {
+			"php": ">= 8.1"
+		},
+		"extensions": {
+			"AknRenderer": "*"
+		}
+	},
+	"Actions": {
+		"aknedit": "MediaWiki\\Extension\\AknEditor\\AknEditAction"
+	},
+	"AutoloadNamespaces": {
+		"MediaWiki\\Extension\\AknEditor\\": "includes/"
+	},
+	"TestAutoloadNamespaces": {
+		"MediaWiki\\Extension\\AknEditor\\Tests\\Unit\\": "tests/phpunit/unit/"
+	},
+	"MessagesDirs": {
+		"AknEditor": [
+			"i18n"
+		]
+	},
+	"ResourceFileModulePaths": {
+		"localBasePath": "resources",
+		"remoteExtPath": "AknEditor/resources"
+	},
+	"ResourceModules": {
+		"ext.aknEditor.app": {
+			"scripts": [
+				"ext.aknEditor.app.js"
+			],
+			"styles": "ext.aknEditor.styles.css",
+			"dependencies": [
+				"oojs-ui-core",
+				"oojs-ui-widgets",
+				"oojs-ui-toolbars",
+				"oojs-ui-windows",
+				"oojs-ui.styles.icons-interactions",
+				"oojs-ui.styles.icons-moderation",
+				"oojs-ui.styles.icons-movement",
+				"oojs-ui.styles.icons-content",
+				"oojs-ui.styles.icons-editing-advanced",
+				"oojs-ui.styles.icons-editing-styling",
+				"oojs-ui.styles.icons-editing-citation",
+				"oojs-ui.styles.icons-accessibility",
+				"mediawiki.api",
+				"ext.aknRenderer.styles"
+			],
+			"messages": [
+				"aknedit-save",
+				"aknedit-save-dialog-title",
+				"aknedit-save-summary-label",
+				"aknedit-save-confirm",
+				"aknedit-cancel",
+				"aknedit-outline-heading",
+				"aknedit-add-element",
+				"aknedit-remove-element",
+				"aknedit-remove-confirm",
+				"aknedit-move-up",
+				"aknedit-move-down",
+				"aknedit-metadata-heading",
+				"aknedit-field-alias",
+				"aknedit-field-doctype",
+				"aknedit-field-number",
+				"aknedit-field-enacted",
+				"aknedit-field-country",
+				"aknedit-field-language",
+				"aknedit-field-fek",
+				"aknedit-field-fek-series",
+				"aknedit-field-fek-number",
+				"aknedit-field-fek-date",
+				"aknedit-not-supported-gazette",
+				"aknedit-save-error",
+				"aknedit-tool-add",
+				"aknedit-tool-remove",
+				"aknedit-tool-moveup",
+				"aknedit-tool-movedown",
+				"aknedit-tool-validate",
+				"aknedit-tool-metadata",
+				"aknedit-tool-showchanges",
+				"aknedit-tool-preview",
+				"aknedit-validate-title",
+				"aknedit-validate-ok",
+				"aknedit-validate-issues",
+				"aknedit-validate-dup-eid",
+				"aknedit-validate-missing-eid",
+				"aknedit-validate-missing-meta",
+				"aknedit-validate-missing-body",
+				"aknedit-showchanges-title",
+				"aknedit-showchanges-none",
+				"aknedit-preview-title",
+				"aknedit-attr-heading",
+				"aknedit-attr-name",
+				"aknedit-attr-value",
+				"aknedit-attr-add",
+				"aknedit-attr-remove",
+				"aknedit-field-num",
+				"aknedit-field-heading",
+				"aknedit-field-content",
+				"aknedit-field-content-help",
+				"aknedit-field-content-error",
+				"aknedit-field-eid",
+				"aknedit-inline-b",
+				"aknedit-inline-i",
+				"aknedit-inline-u",
+				"aknedit-inline-term",
+				"aknedit-inline-date",
+				"aknedit-inline-ref",
+				"aknedit-inline-sup",
+				"aknedit-inline-sub",
+				"aknedit-inline-mref",
+				"aknedit-inline-def",
+				"aknedit-inline-entity",
+				"aknedit-inline-organization",
+				"aknedit-inline-person",
+				"aknedit-inline-role",
+				"aknedit-inline-location",
+				"aknedit-inline-quantity",
+				"aknedit-inline-quotedtext",
+				"aknedit-inline-concept",
+				"aknedit-inline-object"
+			]
+		}
+	},
+	"HookHandlers": {
+		"main": {
+			"class": "MediaWiki\\Extension\\AknEditor\\HookHandler"
+		}
+	},
+	"Hooks": {
+		"SkinTemplateNavigation::Universal": "main"
+	},
+	"manifest_version": 2
+}
