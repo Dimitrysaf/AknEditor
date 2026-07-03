@@ -16,7 +16,11 @@ SaveDialog.static.size = 'larger';
 SaveDialog.static.actions = [
 	{ action: 'save', modes: 'save', label: mw.msg( 'aknedit-save-confirm' ), flags: [ 'primary', 'progressive' ] },
 	{ modes: 'save', label: mw.msg( 'aknedit-cancel' ), flags: 'safe' },
-	{ action: 'back', modes: [ 'review', 'preview' ], label: mw.msg( 'aknedit-cancel' ), flags: 'safe' }
+	// Mirrors ve.ui.MWSaveDialog.static.actions: 'review'/'preview' are actions on this same
+	// dialog (visible only in 'save' mode), not separate toolbar tools that jump straight in.
+	{ action: 'review', modes: 'save', label: mw.msg( 'aknedit-save-review' ) },
+	{ action: 'preview', modes: 'save', label: mw.msg( 'aknedit-save-preview' ) },
+	{ action: 'back', modes: [ 'review', 'preview' ], label: mw.msg( 'aknedit-save-back' ), flags: [ 'safe', 'back' ] }
 ];
 
 SaveDialog.prototype.initialize = function () {
@@ -69,12 +73,26 @@ SaveDialog.prototype.getBodyHeight = function () {
 	return this.panels.getCurrentItem().$element.outerHeight( true ) || 300;
 };
 
+/**
+ * @param {string} action
+ * @return {OO.ui.Process}
+ */
 SaveDialog.prototype.getActionProcess = function ( action ) {
 	var dialog = this;
 	if ( action === 'save' ) {
+		// Matches ve.ui.MWSaveDialog's own 'save' action: emit 'save' with a deferred and
+		// return its promise, so OOUI's own process-pending spinner covers the dialog while
+		// the caller's API request is in flight, and a rejection surfaces as the dialog's
+		// built-in recoverable error panel instead of a separate alert().
 		return new OO.ui.Process( function () {
-			dialog.emit( 'save', dialog.summaryInput.getValue() );
-			dialog.close( { action: action } );
+			var deferred = $.Deferred();
+			dialog.emit( 'save', dialog.summaryInput.getValue(), deferred );
+			return deferred.promise();
+		} );
+	}
+	if ( action === 'review' || action === 'preview' ) {
+		return new OO.ui.Process( function () {
+			dialog.emit( action );
 		} );
 	}
 	if ( action === 'back' ) {
@@ -85,7 +103,37 @@ SaveDialog.prototype.getActionProcess = function ( action ) {
 	return SaveDialog.super.prototype.getActionProcess.call( this, action );
 };
 
-/** Metadata form, moved into a dialog so the outline can span the full width. */
+/**
+ * One page of the metadata dialog's outline. Mirrors OOUI's own documented PageLayout
+ * subclassing pattern, the same one VE's real metadata pages use (verified against
+ * modules/ve-mw/ui/pages/ve.ui.MWCategoriesPage.js and friends: a plain OO.ui.PageLayout
+ * subclass whose `setupOutlineItem` sets the outline row's label).
+ *
+ * @param {string} name
+ * @param {string} title
+ */
+function MetaPage( name, title ) {
+	MetaPage.super.call( this, name, {} );
+	this.title = title;
+}
+OO.inheritClass( MetaPage, OO.ui.PageLayout );
+
+MetaPage.prototype.setupOutlineItem = function () {
+	this.outlineItem.setLabel( this.title );
+};
+
+MetaPage.prototype.setFields = function ( fields ) {
+	this.$element.empty().append( new OO.ui.FieldsetLayout( { items: fields } ).$element );
+};
+
+/**
+ * Metadata form, moved into a dialog so the outline can span the full width. Structured as an
+ * outlined OO.ui.BookletLayout — matching VE's real ve.ui.MWMetaDialog (verified against
+ * modules/ve-mw/ui/dialogs/ve.ui.MWMetaDialog.js: `this.bookletLayout = new
+ * OO.ui.BookletLayout( { outlined: true } )`, pages added via `addPages`) — instead of one
+ * long flat form, since AknEditor's metadata splits cleanly into identification vs. gazette
+ * publication fields.
+ */
 function MetadataDialog( config ) {
 	MetadataDialog.super.call( this, config );
 }
@@ -99,15 +147,26 @@ MetadataDialog.static.actions = [
 
 MetadataDialog.prototype.initialize = function () {
 	MetadataDialog.super.prototype.initialize.call( this );
-	this.fieldset = new OO.ui.FieldsetLayout();
-	var panel = new OO.ui.PanelLayout( { padded: true, expanded: false } );
-	panel.$element.append( this.fieldset.$element );
-	this.$body.append( panel.$element );
+	this.identificationPage = new MetaPage( 'identification', mw.msg( 'aknedit-metadata-page-identification' ) );
+	this.publicationPage = new MetaPage( 'publication', mw.msg( 'aknedit-metadata-page-publication' ) );
+	this.bookletLayout = new OO.ui.BookletLayout( { outlined: true } );
+	this.bookletLayout.addPages( [ this.identificationPage, this.publicationPage ] );
+	this.$body.append( this.bookletLayout.$element );
 };
 
-MetadataDialog.prototype.setFields = function ( fields ) {
-	this.fieldset.clearItems();
-	this.fieldset.addItems( fields );
+/**
+ * @param {OO.ui.FieldLayout[]} identificationFields
+ * @param {OO.ui.FieldLayout[]} publicationFields
+ */
+MetadataDialog.prototype.setFields = function ( identificationFields, publicationFields ) {
+	this.identificationPage.setFields( identificationFields );
+	this.publicationPage.setFields( publicationFields );
+};
+
+MetadataDialog.prototype.getSetupProcess = function ( data ) {
+	return MetadataDialog.super.prototype.getSetupProcess.call( this, data ).next( function () {
+		this.bookletLayout.setPage( 'identification' );
+	}, this );
 };
 
 MetadataDialog.prototype.getBodyHeight = function () {
@@ -115,41 +174,82 @@ MetadataDialog.prototype.getBodyHeight = function () {
 };
 
 /**
- * Per-element editor, opened as a modal when an outline row is selected (per explicit
- * feedback — this must be a dialog, not an inline panel). Wraps the same attribute-table
- * and num/heading field logic the old inline panel used, unchanged.
+ * Per-element editor, shown as a side pane next to the outline when a row is selected — a
+ * split workspace (outline | element pane) instead of a floating modal, per explicit
+ * feedback. Wraps the same attribute-table and num/heading field logic the old ElementDialog
+ * modal used, unchanged; only the window chrome (ProcessDialog → plain Widget + close button)
+ * is different.
  *
  * @param {AknEditorApp} app
  */
-function ElementDialog( app, config ) {
-	ElementDialog.super.call( this, config );
+function ElementPane( app ) {
+	ElementPane.super.call( this );
 	this.app = app;
-}
-OO.inheritClass( ElementDialog, OO.ui.ProcessDialog );
-ElementDialog.static.name = 'aknEditorElementDialog';
-ElementDialog.static.size = 'large';
-ElementDialog.static.actions = [
-	{ label: mw.msg( 'aknedit-cancel' ), flags: 'safe' }
-];
 
-ElementDialog.prototype.initialize = function () {
-	ElementDialog.super.prototype.initialize.call( this );
+	this.$heading = $( '<h3>' ).addClass( 'akn-editor-element-pane-title' );
+
+	this.moveUpButton = new OO.ui.ButtonWidget( {
+		icon: 'arrowUp',
+		label: mw.msg( 'aknedit-tool-moveup' ),
+		invisibleLabel: true,
+		framed: false
+	} );
+	this.moveUpButton.on( 'click', function () { app.moveSelected( -1 ); } );
+
+	this.moveDownButton = new OO.ui.ButtonWidget( {
+		icon: 'arrowDown',
+		label: mw.msg( 'aknedit-tool-movedown' ),
+		invisibleLabel: true,
+		framed: false
+	} );
+	this.moveDownButton.on( 'click', function () { app.moveSelected( 1 ); } );
+
+	this.removeButton = new OO.ui.ButtonWidget( {
+		icon: 'trash',
+		label: mw.msg( 'aknedit-tool-remove' ),
+		invisibleLabel: true,
+		framed: false,
+		flags: [ 'destructive' ]
+	} );
+	this.removeButton.on( 'click', function () { app.removeSelected(); } );
+
+	this.closeButton = new OO.ui.ButtonWidget( {
+		icon: 'close',
+		label: mw.msg( 'aknedit-element-pane-close' ),
+		invisibleLabel: true,
+		framed: false
+	} );
+	this.closeButton.on( 'click', function () {
+		this.emit( 'close' );
+	}.bind( this ) );
+
 	this.$fields = $( '<div>' );
 	this.$attrs = $( '<div>' );
-	var panel = new OO.ui.PanelLayout( { padded: true, expanded: false } );
-	panel.$element.append(
+
+	this.elementButtons = new OO.ui.ButtonGroupWidget( {
+		items: [ this.moveUpButton, this.moveDownButton, this.removeButton ]
+	} );
+
+	var $headerActions = $( '<div>' ).addClass( 'akn-editor-element-pane-header-actions' ).append(
+		this.elementButtons.$element,
+		this.closeButton.$element
+	);
+
+	this.$element.addClass( 'akn-editor-element-pane' ).append(
+		$( '<div>' ).addClass( 'akn-editor-element-pane-header' ).append( this.$heading, $headerActions ),
 		this.$fields,
 		$( '<h4>' ).addClass( 'akn-editor-dialog-heading' ).text( mw.msg( 'aknedit-attr-heading' ) ),
 		this.$attrs
 	);
-	this.$body.append( panel.$element );
-};
+}
+OO.inheritClass( ElementPane, OO.ui.Widget );
 
 /**
  * @param {Element} el The structural element to edit.
- * @param {OO.ui.OutlineOptionWidget} outlineItem Its outline row, relabelled live as num/heading change.
+ * @param {Function} onRelabel Called with the element's fresh outline label whenever its
+ *  num/heading changes, so the caller can relabel the corresponding outline row live.
  */
-ElementDialog.prototype.setElement = function ( el, outlineItem ) {
+ElementPane.prototype.setElement = function ( el, onRelabel ) {
 	var app = this.app;
 
 	// eId is system-managed, not user-editable (see renderAttributeTable) — but every
@@ -158,8 +258,12 @@ ElementDialog.prototype.setElement = function ( el, outlineItem ) {
 		el.setAttribute( 'eId', app.nextEid( el.localName ) );
 	}
 
+	this.$heading.text( elementTypeLabel( el.localName ) );
+	this.moveUpButton.setDisabled( !app.canMoveSelected( -1 ) );
+	this.moveDownButton.setDisabled( !app.canMoveSelected( 1 ) );
+
 	function relabel() {
-		outlineItem.setLabel( outlineLabel( el ) );
+		onRelabel( outlineLabel( el ) );
 	}
 
 	var numField = new TextContentField( function ( create ) {
@@ -247,8 +351,4 @@ ElementDialog.prototype.setElement = function ( el, outlineItem ) {
 		new OO.ui.FieldsetLayout( { items: items } ).$element
 	);
 	this.$attrs.empty().append( app.renderAttributeTable( el ) );
-};
-
-ElementDialog.prototype.getBodyHeight = function () {
-	return 500;
 };

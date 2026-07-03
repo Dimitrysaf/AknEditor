@@ -12,6 +12,10 @@
 	margin-bottom: 1em;
 }
 
+body.action-aknedit #mw-content-text {
+	margin: 0;
+}
+
 /*
  * Save/Cancel must fill the toolbar's full height, like VE's own save button, instead of
  * floating at their own (shorter) natural button height inside a taller bar. `.oo-ui-toolbar-bar`
@@ -27,8 +31,6 @@
 	display: flex;
 	align-items: stretch;
 	float: none;
-	/* Push to the far right of the flex bar instead of sitting right after the tool icons
-	 * (both .oo-ui-toolbar-tools and .oo-ui-toolbar-actions float left by default). */
 	margin-left: auto;
 }
 
@@ -48,8 +50,139 @@
 	align-items: center;
 }
 
-.akn-editor-outline {
+.akn-editor-toolbar .oo-ui-toolbar-tools > .oo-ui-toolGroup + .oo-ui-toolGroup,
+.akn-editor-toolbar .oo-ui-barToolGroup-tools > .oo-ui-tool + .oo-ui-tool,
+.akn-editor-toolbar .oo-ui-toolbar-actions .oo-ui-buttonElement + .oo-ui-buttonElement {
+	border-inline-start: 1px solid #c8ccd1;
+}
+
+/*
+ * Split workspace: outline on the left, element pane on the right. The pane column only
+ * appears once `.akn-editor-workspace-split` is toggled on (a row selected) — before that,
+ * the outline alone takes the full width, per explicit feedback that the pane should *open*
+ * on selection rather than always occupy half the screen.
+ */
+.akn-editor-workspace {
+	display: flex;
+	align-items: flex-start;
+	gap: 2em;
+}
+
+.akn-editor-outline-col {
+	flex: 1 1 100%;
+	min-width: 0;
+}
+
+.akn-editor-workspace-split .akn-editor-outline-col {
+	flex: 0 1 40%;
+}
+
+.akn-editor-element-pane {
+	display: none;
+	flex: 1 1 60%;
+	min-width: 0;
+	border-left: 1px solid #a2a9b1;
+	padding-left: 2em;
+	/* Stays put below the sticky toolbar while the outline column scrolls past it (see the
+	 * `--akn-editor-toolbar-height` variable set from JS in ext.aknEditor.app.js#mount). Its
+	 * own content scrolls internally rather than growing taller than the viewport. */
+	position: sticky;
+	top: var( --akn-editor-toolbar-height, 0 );
+	max-height: calc( 100vh - var( --akn-editor-toolbar-height, 0px ) - 2em );
+	overflow-y: auto;
+}
+
+.akn-editor-workspace-split .akn-editor-element-pane {
+	display: block;
+}
+
+.akn-editor-element-pane-header {
+	margin-bottom: 0.5em;
+}
+
+.akn-editor-element-pane-header-actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-top: 0.25em;
+}
+
+.akn-editor-element-pane-header-actions .oo-ui-buttonGroupWidget {
+	display: flex;
+	gap: 0.25em;
+}
+
+.akn-editor-element-pane-title {
+	margin: 0;
+}
+
+/* One outline row per line, divider-separated, with a drag handle at the edge. */
+.akn-editor-outline-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	padding: 0.5em 0.25em;
+	border-bottom: 1px solid #eaecf0;
+	cursor: pointer;
+}
+
+.akn-editor-outline-row:hover {
+	background-color: #f8f9fa;
+}
+
+.akn-editor-outline-row-active {
+	background-color: #eaf3ff;
+}
+
+.akn-editor-outline-row-handle {
+	flex-shrink: 0;
+	display: inline-flex;
+	width: 1.14em;
+	height: 1.14em;
+	color: #72777d;
+	cursor: grab;
+	/* Only shown on hover (or while actually being dragged) — invisible rather than
+	 * display:none so the row's layout width doesn't shift when it appears. */
+	visibility: hidden;
+}
+
+.akn-editor-outline-row:hover .akn-editor-outline-row-handle,
+.akn-editor-outline-row.oo-ui-draggableElement-placeholder .akn-editor-outline-row-handle {
+	visibility: visible;
+}
+
+.akn-editor-outline-row-handle svg {
 	width: 100%;
+	height: 100%;
+	fill: currentColor;
+}
+
+.akn-editor-outline-row-label {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.akn-editor-outline-row-collapse {
+	flex-shrink: 0;
+	visibility: hidden;
+	transition: transform 100ms ease-in-out;
+}
+
+.akn-editor-outline-row:hover .akn-editor-outline-row-collapse {
+	visibility: visible;
+}
+
+.akn-editor-outline-row-collapse-collapsed {
+	transform: rotate( -90deg );
+}
+
+.akn-editor-outline-row-collapse-empty,
+.akn-editor-outline-row:hover .akn-editor-outline-row-collapse-empty {
+	visibility: hidden;
+	pointer-events: none;
 }
 
 .akn-editor-dialog-heading {

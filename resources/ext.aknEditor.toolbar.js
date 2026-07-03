@@ -1,11 +1,9 @@
-var TOOL_NAMES = [ 'add', 'remove', 'moveup', 'movedown', 'validate', 'metadata', 'showchanges', 'preview' ];
-
 function apiErrorDetail( code, result ) {
 	return result && result.error ? result.error.info : code;
 }
 
 /** A small OO.ui.Tool subclass factory — avoids repeating the same boilerplate 8 times. */
-function registerTool( toolFactory, name, icon, msgKey, onSelect ) {
+function registerTool( toolFactory, name, icon, msgKey, onSelect, displayBothIconAndLabel ) {
 	function Tool() {
 		Tool.super.apply( this, arguments );
 	}
@@ -13,12 +11,47 @@ function registerTool( toolFactory, name, icon, msgKey, onSelect ) {
 	Tool.static.name = name;
 	Tool.static.icon = icon;
 	Tool.static.title = mw.msg( msgKey );
+	Tool.static.displayBothIconAndLabel = !!displayBothIconAndLabel;
 	Tool.prototype.onSelect = function () {
 		onSelect();
 		this.setActive( false );
 	};
 	Tool.prototype.onUpdateState = function () {};
 	toolFactory.register( Tool );
+}
+
+function registerHistoryTools( toolFactory, app ) {
+	function UndoTool() {
+		UndoTool.super.apply( this, arguments );
+	}
+	OO.inheritClass( UndoTool, OO.ui.Tool );
+	UndoTool.static.name = 'undo';
+	UndoTool.static.icon = 'undo';
+	UndoTool.static.title = mw.msg( 'aknedit-tool-undo' );
+	UndoTool.prototype.onSelect = function () {
+		app.undo();
+		this.setActive( false );
+	};
+	UndoTool.prototype.onUpdateState = function () {
+		this.setDisabled( !app.canUndo() );
+	};
+	toolFactory.register( UndoTool );
+
+	function RedoTool() {
+		RedoTool.super.apply( this, arguments );
+	}
+	OO.inheritClass( RedoTool, OO.ui.Tool );
+	RedoTool.static.name = 'redo';
+	RedoTool.static.icon = 'redo';
+	RedoTool.static.title = mw.msg( 'aknedit-tool-redo' );
+	RedoTool.prototype.onSelect = function () {
+		app.redo();
+		this.setActive( false );
+	};
+	RedoTool.prototype.onUpdateState = function () {
+		this.setDisabled( !app.canRedo() );
+	};
+	toolFactory.register( RedoTool );
 }
 
 /**
@@ -96,29 +129,132 @@ function buildInlineToolbar( contentInput ) {
 	return $( '<div>' ).addClass( 'akn-editor-inline-toolbar' ).append( toolbar.$element );
 }
 
-/** "Add" needs a type picker, so it gets a popup instead of a plain onSelect action. */
-function registerAddTool( toolFactory, app ) {
-	// PopupElement (mixed into OO.ui.PopupTool) only reads `config.popup`, passed at
-	// construction time — there is no `static.popup`, so the popup config must be merged
-	// in here, same as OOUI's own documented PopupTool subclassing example.
-	function AddTool( toolGroup, config ) {
-		AddTool.super.call( this, toolGroup, Object.assign( {
-			popup: { padded: false, head: false }
-		}, config ) );
-		var tool = this;
-		this.menu = new OO.ui.SelectWidget();
-		( app.vocab.structureTypes || [] ).forEach( function ( type ) {
-			tool.menu.addItems( [ new OO.ui.MenuOptionWidget( { data: type, label: type } ) ] );
-		} );
-		this.menu.on( 'choose', function ( item ) {
-			app.addElement( item.getData() );
-			tool.popup.toggle( false );
-		} );
-		this.popup.$body.append( this.menu.$element );
-	}
-	OO.inheritClass( AddTool, OO.ui.PopupTool );
-	AddTool.static.name = 'add';
-	AddTool.static.icon = 'add';
-	AddTool.static.title = mw.msg( 'aknedit-tool-add' );
-	toolFactory.register( AddTool );
+function registerAddTools( toolFactory, app ) {
+	var names = [];
+	( app.vocab.structureTypes || [] ).forEach( function ( type ) {
+		var name = 'add-' + type;
+		names.push( name );
+
+		function AddTypeTool() {
+			AddTypeTool.super.apply( this, arguments );
+		}
+		OO.inheritClass( AddTypeTool, OO.ui.Tool );
+		AddTypeTool.static.name = name;
+		AddTypeTool.static.title = elementTypeLabel( type );
+		AddTypeTool.prototype.onSelect = function () {
+			app.addElement( type );
+			this.setActive( false );
+		};
+		AddTypeTool.prototype.onUpdateState = function () {};
+		toolFactory.register( AddTypeTool );
+	} );
+	return names;
 }
+
+/**
+ * The drag-handle icon (Codex's `cdxIconDraggable` — up/down arrows only, since rows here
+ * only ever reorder vertically among siblings; NOT `cdxIconDraggableXY`, the 4-direction
+ * variant). Inlined as raw SVG since it isn't part of any OOUI icon pack. The vendored
+ * resources/lib/codex-icons/codex-icons.json in this tree predates Codex's split of this
+ * icon into `cdxIconDraggable`/`cdxIconDraggableHorizontal`/`cdxIconDraggableXY` — its
+ * "cdxIconDraggable" entry is actually today's `cdxIconDraggableXY`. This path is instead
+ * verified against the current upstream source, packages/codex-icons/src/images/draggable.svg
+ * in https://github.com/wikimedia/design-codex.
+ *
+ * @return {jQuery}
+ */
+function buildDraggableIcon() {
+	return $(
+		'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" aria-hidden="true">' +
+			'<path d="m13 16.5-3 3-3-3V16h6zm5-3.5H2v-2h16zm0-4H2V7h16zm-5-5.5V4H7v-.5l3-3z"></path>' +
+		'</svg>'
+	);
+}
+
+/**
+ * One row of the structure outline: a divider-separated line with a drag handle at the edge
+ * and a label, replacing the previous OO.ui.OutlineOptionWidget rows per explicit feedback.
+ * The drag handle is OOUI's own documented mechanism for restricting a draggable item's grab
+ * area (verified against resources/lib/ooui/oojs-ui-widgets.js: `OO.ui.mixin.DraggableElement`'s
+ * `config.$handle`, "the part of the element which can be used for dragging" — grabbing
+ * anywhere else on the row still just clicks it, `wasHandleUsed` gates whether a real drag
+ * is allowed to start).
+ *
+ * @param {Element} el The structural element this row represents.
+ * @param {string} label
+ * @param {number} level Nesting depth, for indentation.
+ */
+function OutlineRow( el, label, level, hasChildren, collapsed ) {
+	OutlineRow.super.call( this );
+
+	this.el = el;
+
+	this.collapseButton = new OO.ui.ButtonWidget( {
+		icon: 'downTriangle',
+		label: mw.msg( collapsed ? 'aknedit-outline-expand' : 'aknedit-outline-collapse' ),
+		invisibleLabel: true,
+		framed: false,
+		classes: [ 'akn-editor-outline-row-collapse' ]
+	} );
+	if ( hasChildren ) {
+		this.collapseButton.on( 'click', function () {
+			this.emit( 'togglecollapse' );
+		}.bind( this ) );
+	} else {
+		this.collapseButton.$element.addClass( 'akn-editor-outline-row-collapse-empty' );
+	}
+	this.collapseButton.$element.toggleClass( 'akn-editor-outline-row-collapse-collapsed', !!collapsed );
+
+	this.$handle = $( '<span>' ).addClass( 'akn-editor-outline-row-handle' ).append( buildDraggableIcon() );
+	this.$label = $( '<span>' ).addClass( 'akn-editor-outline-row-label' ).text( label );
+
+	OO.ui.mixin.DraggableElement.call( this, { $handle: this.$handle } );
+
+	this.$element
+		.addClass( 'akn-editor-outline-row' )
+		.data( 'aknOutlineRow', this )
+		.css( 'paddingInlineStart', ( level * 0.9 ) + 'em' )
+		.append( this.collapseButton.$element, this.$label, this.$handle )
+		.on( 'click', this.onClick.bind( this ) );
+}
+OO.inheritClass( OutlineRow, OO.ui.Widget );
+OO.mixinClass( OutlineRow, OO.ui.mixin.DraggableElement );
+
+/** @fires select */
+OutlineRow.prototype.onClick = function ( e ) {
+	// The handle has its own job (dragging) — clicking it shouldn't also select the row.
+	if ( OO.ui.contains( this.$handle[ 0 ], e.target, true ) ) {
+		return;
+	}
+	this.emit( 'select' );
+};
+
+OutlineRow.prototype.setLabel = function ( label ) {
+	this.$label.text( label );
+};
+
+OutlineRow.prototype.setActive = function ( active ) {
+	this.$element.toggleClass( 'akn-editor-outline-row-active', active );
+};
+
+/**
+ * The outline's container, reordering rows by drag-and-drop via OOUI's own
+ * DraggableGroupElement — the same mixin OO.ui.TagMultiselectWidget uses for its own
+ * reorderable tags (resources/lib/ooui/oojs-ui-widgets.js).
+ *
+ * @param {Object} [config]
+ */
+function OutlineGroup( config ) {
+	OutlineGroup.super.call( this, config );
+	// GroupElement defaults `$group` (where item.$element actually gets appended) to a new,
+	// detached <div> unless told otherwise — pointing it at our own $element is the same
+	// thing OO.ui.SelectWidget itself does, and what DraggableGroupElement's own dragover
+	// handling needs, since it queries `this.$group.children()` to find row neighbours.
+	config = Object.assign( { $group: this.$element }, config );
+	OO.ui.mixin.GroupWidget.call( this, config );
+	OO.ui.mixin.DraggableGroupElement.call( this, config );
+	this.$element.addClass( 'akn-editor-outline-group' );
+}
+OO.inheritClass( OutlineGroup, OO.ui.Widget );
+OO.mixinClass( OutlineGroup, OO.ui.mixin.GroupWidget );
+OO.mixinClass( OutlineGroup, OO.ui.mixin.DraggableGroupElement );

@@ -7,7 +7,7 @@ var ROOT_TYPES = [ 'act', 'bill', 'doc' ];
 var CONTAINER_TYPES = [ 'book', 'tome', 'part', 'title', 'subtitle', 'chapter',
 	'subchapter', 'section', 'subsection', 'division', 'list' ];
 
-/** Which of ElementDialog's optional fields apply to a given structural element type. */
+/** Which of ElementPane's optional fields apply to a given structural element type. */
 function formConfigFor( localName ) {
 	return { content: CONTAINER_TYPES.indexOf( localName ) === -1 };
 }
@@ -51,12 +51,11 @@ function findRoot( dom ) {
 	return null;
 }
 
-/** Label an outline item from its <num>/<heading>, falling back to the tag name. */
+function elementTypeLabel( type ) {
+	var msg = mw.message( 'aknedit-elementtype-' + type );
+	return msg.exists() ? msg.text() : type;
+}
+
 function outlineLabel( el ) {
-	var num = firstChild( el, 'num' );
-	var heading = firstChild( el, 'heading' );
-	var label = [ num ? num.textContent : '', heading ? heading.textContent : '' ]
-		.join( ' ' )
-		.trim();
-	return label !== '' ? label : el.localName;
+	return elementTypeLabel( el.localName );
 }
