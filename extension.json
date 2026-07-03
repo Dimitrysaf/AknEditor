@@ -39,7 +39,12 @@
 	"ResourceModules": {
 		"ext.aknEditor.app": {
 			"scripts": [
-				"ext.aknEditor.app.js"
+				"ext.aknEditor.dom.js",
+				"ext.aknEditor.fields.js",
+				"ext.aknEditor.toolbar.js",
+				"ext.aknEditor.dialogs.js",
+				"ext.aknEditor.app.js",
+				"ext.aknEditor.init.js"
 			],
 			"styles": "ext.aknEditor.styles.css",
 			"dependencies": [
