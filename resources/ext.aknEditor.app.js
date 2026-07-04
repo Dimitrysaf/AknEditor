@@ -239,8 +239,9 @@ AknEditorApp.prototype.buildMetaFields = function () {
 		return new OO.ui.DropdownInputWidget( { options: options, value: current || '' } );
 	}
 
-	function textField( fields, msgKey, field ) {
+	function textField( fields, msgKey, field, required ) {
 		var widget = new OO.ui.TextInputWidget( { value: field.get() } );
+		widget.setRequired( !!required );
 		widget.on( 'change', function ( value ) {
 			field.set( value );
 		} );
@@ -250,8 +251,25 @@ AknEditorApp.prototype.buildMetaFields = function () {
 		} ) );
 	}
 
-	function dropdownField( fields, msgKey, field, map ) {
+	function dropdownField( fields, msgKey, field, map, required ) {
 		var widget = dropdown( map, field.get() );
+		widget.setRequired( !!required );
+		widget.on( 'change', function ( value ) {
+			field.set( value );
+		} );
+		fields.push( new OO.ui.FieldLayout( widget, {
+			label: mw.msg( msgKey ),
+			align: 'top'
+		} ) );
+	}
+
+	/** Same as textField, but for an actual calendar date — a real date picker, not free text. */
+	function dateField( fields, msgKey, field, required ) {
+		// $overlay: the Metadata dialog's own overlay (app.metaOverlay, set in mount()) — the
+		// calendar escapes into it instead of trying to expand inside the dialog's own
+		// (comparatively small) page body, while still painting above the dialog itself.
+		var widget = new mw.widgets.DateInputWidget( { value: field.get(), $overlay: app.metaOverlay } );
+		widget.setRequired( !!required );
 		widget.on( 'change', function ( value ) {
 			field.set( value );
 		} );
@@ -263,19 +281,19 @@ AknEditorApp.prototype.buildMetaFields = function () {
 
 	textField( identificationFields, 'aknedit-field-alias', new AttrField(
 		function ( create ) { return app.identificationChild( 'FRBRalias', create ); }, 'value'
-	) );
+	), true );
 	dropdownField( identificationFields, 'aknedit-field-doctype', new AttrField(
 		function () { return app.root; }, 'name'
-	), vocab.docTypes );
+	), vocab.docTypes, true );
 	textField( identificationFields, 'aknedit-field-number', new AttrField(
 		function ( create ) { return app.identificationChild( 'FRBRnumber', create ); }, 'value'
-	) );
-	textField( identificationFields, 'aknedit-field-enacted', new AttrField(
+	), true );
+	dateField( identificationFields, 'aknedit-field-enacted', new AttrField(
 		function ( create ) { return app.identificationChild( 'FRBRdate', create ); }, 'date'
-	) );
+	), true );
 	dropdownField( identificationFields, 'aknedit-field-country', new AttrField(
 		function ( create ) { return app.identificationChild( 'FRBRcountry', create ); }, 'value'
-	), vocab.countries );
+	), vocab.countries, true );
 	dropdownField( identificationFields, 'aknedit-field-language', new AttrField(
 		function ( create ) { return app.frbrChild( 'FRBRExpression', 'FRBRlanguage', create ); }, 'language'
 	), vocab.languages );
@@ -285,7 +303,7 @@ AknEditorApp.prototype.buildMetaFields = function () {
 	textField( identificationFields, 'aknedit-field-frbrname', new AttrField(
 		function ( create ) { return app.identificationChild( 'FRBRname', create ); }, 'value'
 	) );
-	textField( identificationFields, 'aknedit-field-exprdate', new AttrField(
+	dateField( identificationFields, 'aknedit-field-exprdate', new AttrField(
 		function ( create ) { return app.frbrChild( 'FRBRExpression', 'FRBRdate', create ); }, 'date'
 	) );
 	textField( identificationFields, 'aknedit-field-manifuri', new AttrField(
@@ -310,7 +328,7 @@ AknEditorApp.prototype.buildMetaFields = function () {
 	textField( publicationFields, 'aknedit-field-fek-number', new AttrField(
 		function ( create ) { return app.publicationEl( create ); }, 'number'
 	) );
-	textField( publicationFields, 'aknedit-field-fek-date', new AttrField(
+	dateField( publicationFields, 'aknedit-field-fek-date', new AttrField(
 		function ( create ) { return app.publicationEl( create ); }, 'date'
 	) );
 
@@ -607,6 +625,18 @@ AknEditorApp.prototype.renderElementListEditor = function ( wrapperRef, rowTagNa
 			} );
 			return select;
 		}
+		if ( def.kind === 'date' ) {
+			var dateWidget = new mw.widgets.DateInputWidget( { value: el.getAttribute( def.attr ) || '', $overlay: app.metaOverlay } );
+			dateWidget.on( 'change', function ( value ) {
+				if ( value === '' ) {
+					el.removeAttribute( def.attr );
+				} else {
+					el.setAttribute( def.attr, value );
+				}
+				notify();
+			} );
+			return dateWidget;
+		}
 		if ( def.kind === 'childAttr' ) {
 			function childOf( create ) {
 				var child = firstChild( el, def.childTag );
@@ -763,7 +793,7 @@ AknEditorApp.prototype.buildWorkspace = function ( elementPane ) {
 	} );
 
 	var $outlineCol = $( '<div>' ).addClass( 'akn-editor-outline-col' ).append(
-		$( '<h3>' ).text( mw.msg( 'aknedit-outline-heading' ) ),
+		$( '<h3>' ).addClass( 'akn-editor-dialog-heading' ).text( mw.msg( 'aknedit-outline-heading' ) ),
 		group.$element
 	);
 
@@ -826,6 +856,7 @@ AknEditorApp.prototype.buildGazetteWorkspace = function () {
 
 /** Structural sanity check — not full AKN/RelaxNG schema validation, see plan notes. */
 AknEditorApp.prototype.runValidation = function () {
+	var app = this;
 	var issues = [];
 	var seen = Object.create( null );
 	Array.prototype.forEach.call( this.doc.querySelectorAll( '[eId]' ), function ( el ) {
@@ -838,8 +869,21 @@ AknEditorApp.prototype.runValidation = function () {
 		seen[ id ] = true;
 	} );
 	var identification = this.meta ? firstChild( this.meta, 'identification' ) : null;
-	if ( !identification || !firstChild( identification, 'FRBRWork' ) ) {
+	var hasWork = !!identification && !!firstChild( identification, 'FRBRWork' );
+	if ( !hasWork ) {
 		issues.push( mw.msg( 'aknedit-validate-missing-meta' ) );
+	} else if ( !this.isGazette ) {
+		[
+			{ get: function () { return app.root ? app.root.getAttribute( 'name' ) : ''; }, msgKey: 'aknedit-field-doctype' },
+			{ get: function () { var el = app.identificationChild( 'FRBRalias', false ); return el ? el.getAttribute( 'value' ) : ''; }, msgKey: 'aknedit-field-alias' },
+			{ get: function () { var el = app.identificationChild( 'FRBRnumber', false ); return el ? el.getAttribute( 'value' ) : ''; }, msgKey: 'aknedit-field-number' },
+			{ get: function () { var el = app.identificationChild( 'FRBRdate', false ); return el ? el.getAttribute( 'date' ) : ''; }, msgKey: 'aknedit-field-enacted' },
+			{ get: function () { var el = app.identificationChild( 'FRBRcountry', false ); return el ? el.getAttribute( 'value' ) : ''; }, msgKey: 'aknedit-field-country' }
+		].forEach( function ( check ) {
+			if ( !check.get() ) {
+				issues.push( mw.msg( 'aknedit-validate-missing-field', mw.msg( check.msgKey ) ) );
+			}
+		} );
 	}
 	if ( !this.isGazette && ( !this.body || this.body.children.length === 0 ) ) {
 		issues.push( mw.msg( 'aknedit-validate-missing-body' ) );
@@ -908,7 +952,17 @@ AknEditorApp.prototype.mount = function ( $root ) {
 
 	var saveDialog = new SaveDialog();
 	var metadataDialog = new MetadataDialog();
-	windowManager.addWindows( [ saveDialog, metadataDialog ] );
+	var refDialog = new RefDialog();
+	var attrValueDialog = new AttrValueDialog();
+	windowManager.addWindows( [ saveDialog, metadataDialog, refDialog, attrValueDialog ] );
+	app.windowManager = windowManager;
+	app.refDialog = refDialog;
+	app.attrValueDialog = attrValueDialog;
+	// The dialog's own overlay (every OO.ui.Window has one) — not OO.ui.getDefaultOverlay(),
+	// which has no z-index of its own and so doesn't reliably paint above an open modal. Used
+	// by dateField/renderElementListEditor's date fields so their calendars aren't stuck
+	// behind the Metadata dialog.
+	app.metaOverlay = metadataDialog.$overlay;
 	var elementPane = app.isGazette ? null : new ElementPane( app );
 
 	function refreshMetaFields() {
@@ -940,7 +994,7 @@ AknEditorApp.prototype.mount = function ( $root ) {
 			'lifecycle', 'eventRef',
 			[
 				{ attr: 'eId', msgKey: 'aknedit-lifecycle-eid', autoGenerate: function () { return app.nextEid( 'event' ); } },
-				{ attr: 'date', msgKey: 'aknedit-lifecycle-date' },
+				{ kind: 'date', attr: 'date', msgKey: 'aknedit-lifecycle-date' },
 				{ attr: 'type', msgKey: 'aknedit-lifecycle-type' },
 				{ attr: 'source', msgKey: 'aknedit-lifecycle-source' }
 			]

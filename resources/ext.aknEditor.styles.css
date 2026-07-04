@@ -53,7 +53,7 @@ body.action-aknedit #mw-content-text {
 .akn-editor-toolbar .oo-ui-toolbar-tools > .oo-ui-toolGroup + .oo-ui-toolGroup,
 .akn-editor-toolbar .oo-ui-barToolGroup-tools > .oo-ui-tool + .oo-ui-tool,
 .akn-editor-toolbar .oo-ui-toolbar-actions .oo-ui-buttonElement + .oo-ui-buttonElement {
-	border-inline-start: 1px solid #c8ccd1;
+	border-inline-start: 1px solid var( --border-color-subtle, #c8ccd1 );
 }
 
 /*
@@ -81,7 +81,7 @@ body.action-aknedit #mw-content-text {
 	display: none;
 	flex: 1 1 60%;
 	min-width: 0;
-	border-left: 1px solid #a2a9b1;
+	border-left: 1px solid var( --border-color-base, #a2a9b1 );
 	padding-left: 2em;
 	/* Stays put below the sticky toolbar while the outline column scrolls past it (see the
 	 * `--akn-editor-toolbar-height` variable set from JS in ext.aknEditor.app.js#mount). Its
@@ -127,11 +127,11 @@ body.action-aknedit #mw-content-text {
 }
 
 .akn-editor-outline-row:hover {
-	background-color: #f8f9fa;
+	background-color: var( --background-color-interactive-subtle, #f8f9fa );
 }
 
 .akn-editor-outline-row-active {
-	background-color: #eaf3ff;
+	background-color: var( --background-color-progressive-subtle, #eaf3ff );
 }
 
 .akn-editor-outline-row-handle {
@@ -218,14 +218,15 @@ body.action-aknedit #mw-content-text {
 
 .akn-editor-meta-list-row {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.5em;
 }
 
 .akn-editor-meta-list-row > .oo-ui-textInputWidget,
 .akn-editor-meta-list-row > .oo-ui-dropdownInputWidget {
-	flex: 1 1 0;
-	min-width: 0;
+	flex: 1 1 8em;
+	min-width: 8em;
 }
 
 .akn-editor-dialog-content {
@@ -234,4 +235,35 @@ body.action-aknedit #mw-content-text {
 
 .akn-editor-inline-toolbar {
 	margin-bottom: 0.25em;
+}
+
+.akn-editor-ref-picker-heading {
+	padding: 0.5em 0.75em 0.25em;
+	font-weight: bold;
+	color: var( --color-subtle, #54595d );
+}
+
+.akn-editor-ref-picker-back {
+	margin: 0.25em 0.75em;
+}
+
+.akn-editor-richtext {
+	min-height: 10em;
+	padding: 0.5em;
+	border: 1px solid var( --border-color-base, #a2a9b1 );
+	border-radius: 2px;
+}
+
+.akn-editor-richtext:focus {
+	outline: 2px solid var( --border-color-progressive, #36c );
+	outline-offset: -1px;
+}
+
+.akn-editor-richtext-block {
+	margin: 0.25em 0;
+	padding: 0.5em;
+	border: 1px dashed var( --border-color-base, #a2a9b1 );
+	background-color: var( --background-color-interactive-subtle, #f8f9fa );
+	color: var( --color-subtle, #54595d );
+	cursor: not-allowed;
 }

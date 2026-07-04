@@ -40,11 +40,11 @@ var INLINE_EXTRAS = [
 	{ tag: 'u', icon: 'underline' },
 	{ tag: 'sup', icon: 'superscript' },
 	{ tag: 'sub', icon: 'subscript' },
-	{ tag: 'date', attr: 'date', icon: 'calendar' },
+	{ tag: 'date', attr: 'date', icon: 'calendar', inputType: 'date' },
 	{ tag: 'ref', attr: 'href', icon: 'reference', picker: true },
 	{ tag: 'rref', attr: 'href', icon: 'referenceExisting', picker: true },
 	{ tag: 'mref', icon: 'reference' },
-	{ tag: 'authorialNote', attr: 'marker', icon: 'reference' },
+	{ tag: 'authorialNote', attr: 'marker', icon: 'reference', inputType: 'number' },
 	{ tag: 'note', icon: 'flag' },
 	{ tag: 'ins', icon: 'add' },
 	{ tag: 'del', icon: 'trash' },
@@ -53,9 +53,9 @@ var INLINE_EXTRAS = [
 
 var PRIMARY_INLINE_TAGS = [ 'b', 'i', 'u', 'term', 'date', 'ref' ];
 
-function inlineEntry( tag, attr, icon, picker ) {
+function inlineEntry( tag, attr, icon, picker, inputType ) {
 	var name = tag.toLowerCase();
-	return { name: name, tag: tag, attr: attr, icon: icon, msgKey: 'aknedit-inline-' + name, picker: !!picker };
+	return { name: name, tag: tag, attr: attr, icon: icon, msgKey: 'aknedit-inline-' + name, picker: !!picker, inputType: inputType };
 }
 
 function buildInlineTagRegistry() {
@@ -63,7 +63,7 @@ function buildInlineTagRegistry() {
 	var byName = {};
 
 	INLINE_EXTRAS.forEach( function ( def ) {
-		byName[ def.tag.toLowerCase() ] = inlineEntry( def.tag, def.attr, def.icon, def.picker );
+		byName[ def.tag.toLowerCase() ] = inlineEntry( def.tag, def.attr, def.icon, def.picker, def.inputType );
 	} );
 	( vocab.inlineSpans || [] ).forEach( function ( tag ) {
 		var name = tag.toLowerCase();
@@ -82,10 +82,11 @@ function buildInlineTagRegistry() {
 		return PRIMARY_INLINE_TAGS.indexOf( a.name ) - PRIMARY_INLINE_TAGS.indexOf( b.name );
 	} );
 
-	return { primary: primary, more: more };
+	return { primary: primary, more: more, byName: byName };
 }
 
 var INLINE_TAG_REGISTRY = buildInlineTagRegistry();
+var INLINE_TAG_BY_NAME = INLINE_TAG_REGISTRY.byName;
 var INLINE_TAGS_PRIMARY = INLINE_TAG_REGISTRY.primary;
 var INLINE_TAGS_MORE = INLINE_TAG_REGISTRY.more;
 
@@ -107,8 +108,8 @@ function structuralDescription( name ) {
 function inlineDescription( entry ) {
 	if ( entry.picker ) {
 		return 'Inline span <' + entry.tag + '>: wraps the current text selection with ' +
-			'@href resolved from a popup picker of local eIds (registerRefTool, ' +
-			'ext.aknEditor.toolbar.js), not a hand-typed placeholder.';
+			'@href resolved from the RefDialog modal picker (registerRefTool, ' +
+			'ext.aknEditor.toolbar.js / ext.aknEditor.dialogs.js), not a hand-typed placeholder.';
 	}
 	return 'Inline span <' + entry.tag + '>' + ( entry.attr ? ' (with an empty @' + entry.attr +
 		' placeholder)' : '' ) + ': one-click wrap of the current text selection in the content ' +

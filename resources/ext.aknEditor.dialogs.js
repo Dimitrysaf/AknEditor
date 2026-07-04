@@ -113,7 +113,7 @@ SaveDialog.prototype.getActionProcess = function ( action ) {
  * @param {string} title
  */
 function MetaPage( name, title ) {
-	MetaPage.super.call( this, name, {} );
+	MetaPage.super.call( this, name, { scrollable: true } );
 	this.title = title;
 }
 OO.inheritClass( MetaPage, OO.ui.PageLayout );
@@ -167,6 +167,7 @@ MetadataDialog.prototype.initialize = function () {
 		this.amendmentsPage
 	] );
 	this.$body.append( this.bookletLayout.$element );
+	this.bookletLayout.on( 'set', this.updateSize.bind( this ) );
 };
 
 /**
@@ -185,7 +186,233 @@ MetadataDialog.prototype.getSetupProcess = function ( data ) {
 };
 
 MetadataDialog.prototype.getBodyHeight = function () {
-	return 400;
+	var page = this.bookletLayout.stackLayout.getCurrentItem();
+	var pageHeight = page ? page.$element.outerHeight( true ) : 0;
+	// Never shrink to fit a short page (e.g. Classification with only a couple of rows) —
+	// only grow past this floor for a page with genuinely more content than it fits.
+	return Math.max( pageHeight, 500 );
+};
+
+/**
+ * The ref/rref cross-reference picker, a real modal (opened by registerRefTool,
+ * ext.aknEditor.toolbar.js) rather than a toolbar popup — search-then-select is too much
+ * task for a cramped popup. One shared instance for the whole app; `getSetupProcess`'s
+ * `data` carries which content field and tag/attr this particular open is for.
+ *
+ * Two ways to resolve a target: the current document's own local eIds (instant, no API
+ * call), or another document via AknRenderer's `action=aknreference` API — first `op=search`
+ * to find the document, then `op=eids` to list its structure, reusing the FRBR Work URI /
+ * structure index AknRenderer already maintains instead of the editor re-deriving hrefs.
+ */
+function RefDialog( config ) {
+	RefDialog.super.call( this, config );
+}
+OO.inheritClass( RefDialog, OO.ui.ProcessDialog );
+RefDialog.static.name = 'aknEditorRefDialog';
+RefDialog.static.size = 'medium';
+RefDialog.static.actions = [
+	{ label: mw.msg( 'aknedit-cancel' ), flags: 'safe' }
+];
+
+RefDialog.prototype.initialize = function () {
+	RefDialog.super.prototype.initialize.call( this );
+	var dialog = this;
+
+	this.localHeading = $( '<div>' ).addClass( 'akn-editor-ref-picker-heading' ).text( mw.msg( 'aknedit-ref-local-heading' ) );
+	this.localMenu = new OO.ui.SelectWidget();
+	this.localMenu.on( 'choose', function ( item ) {
+		dialog.commit( '#' + item.getData() );
+	} );
+
+	this.searchInput = new OO.ui.SearchInputWidget( { placeholder: mw.msg( 'aknedit-ref-search-placeholder' ) } );
+	this.searchInput.on( 'change', mw.util.debounce( function ( query ) {
+		dialog.doSearch( query );
+	}, 250 ) );
+
+	this.docMenu = new OO.ui.SelectWidget();
+	this.docMenu.on( 'choose', function ( item ) {
+		dialog.chooseDoc( item.getData() );
+	} );
+
+	this.backButton = new OO.ui.ButtonWidget( {
+		label: mw.msg( 'aknedit-ref-back' ),
+		framed: false,
+		icon: 'previous',
+		classes: [ 'akn-editor-ref-picker-back' ]
+	} );
+	this.backButton.on( 'click', this.showSearch.bind( this ) );
+
+	this.eidMenu = new OO.ui.SelectWidget();
+	// .off() first: choosing a document twice without ever picking an eId would otherwise
+	// stack a stale listener holding the previous match, double-committing.
+	this.eidMenu.on( 'choose', function ( item ) {
+		dialog.commit( dialog.chosenMatch.workUri + ( item.getData() ? '#' + item.getData() : '' ) );
+	} );
+
+	this.panel = new OO.ui.PanelLayout( { padded: true, expanded: false, scrollable: true } );
+	this.panel.$element.append(
+		this.localHeading, this.localMenu.$element,
+		this.searchInput.$element, this.docMenu.$element,
+		this.backButton.$element, this.eidMenu.$element
+	);
+	this.$body.append( this.panel.$element );
+	this.showSearch();
+};
+
+RefDialog.prototype.showSearch = function () {
+	this.backButton.toggle( false );
+	this.eidMenu.toggle( false ).clearItems();
+	this.searchInput.toggle( true );
+	this.docMenu.toggle( true );
+};
+
+RefDialog.prototype.doSearch = function ( query ) {
+	var dialog = this;
+	this.docMenu.clearItems();
+	if ( !query ) {
+		return;
+	}
+	new mw.Api().get( { action: 'aknreference', op: 'search', query: query, formatversion: 2 } ).done( function ( result ) {
+		dialog.docMenu.clearItems();
+		( result.matches || [] ).forEach( function ( match ) {
+			dialog.docMenu.addItems( [ new OO.ui.MenuOptionWidget( {
+				data: match,
+				label: match.alias ? match.title + ' — ' + match.alias : match.title
+			} ) ] );
+		} );
+	} );
+};
+
+RefDialog.prototype.chooseDoc = function ( match ) {
+	var dialog = this;
+	this.chosenMatch = match;
+	this.searchInput.toggle( false );
+	this.docMenu.toggle( false );
+	this.backButton.toggle( true );
+	this.eidMenu.toggle( true ).clearItems();
+	this.eidMenu.addItems( [ new OO.ui.MenuOptionWidget( { data: '', label: mw.msg( 'aknedit-ref-fragment-whole' ) } ) ] );
+	new mw.Api().get( { action: 'aknreference', op: 'eids', pageid: match.pageid, formatversion: 2 } ).done( function ( result ) {
+		( result.eids || [] ).forEach( function ( row ) {
+			var label = ( row.num ? row.num + ' ' : '' ) + ( row.heading || row.eid );
+			dialog.eidMenu.addItems( [ new OO.ui.MenuOptionWidget( { data: row.eid, label: label + ' (' + row.eid + ')' } ) ] );
+		} );
+	} );
+};
+
+RefDialog.prototype.commit = function ( href ) {
+	if ( this.target.mode === 'xml' ) {
+		wrapRange( this.target.input, this.capturedStart, this.capturedEnd, this.def.tag, this.def.attr, href );
+	} else if ( this.capturedRange ) {
+		var el = wrapRichRange( this.capturedRange, this.def.tag, this.def.attr );
+		richtextSetAttr( el, this.def.attr, href );
+	}
+	this.close();
+};
+
+RefDialog.prototype.getSetupProcess = function ( data ) {
+	return RefDialog.super.prototype.getSetupProcess.call( this, data ).next( function () {
+		this.target = data.target;
+		this.def = data.def;
+		this.capturedStart = data.capturedStart;
+		this.capturedEnd = data.capturedEnd;
+		this.capturedRange = data.capturedRange;
+		this.chosenMatch = null;
+		this.title.setLabel( mw.msg( data.def.msgKey ) );
+
+		this.searchInput.setValue( '' );
+		this.docMenu.clearItems();
+		this.showSearch();
+
+		this.localMenu.clearItems();
+		var localMenu = this.localMenu;
+		data.app.structureEls.forEach( function ( el ) {
+			var eId = el.getAttribute( 'eId' );
+			if ( !eId ) {
+				return;
+			}
+			localMenu.addItems( [ new OO.ui.MenuOptionWidget( { data: eId, label: outlineLabel( el ) + ' (' + eId + ')' } ) ] );
+		} );
+	}, this );
+};
+
+RefDialog.prototype.getBodyHeight = function () {
+	return Math.max( this.panel.$element.outerHeight( true ) || 0, 400 );
+};
+
+function calendarAdapter() {
+	var calendar = new mw.widgets.CalendarWidget();
+	return {
+		$element: calendar.$element,
+		getValue: function () {
+			return calendar.getDate() || '';
+		},
+		setValue: function ( value ) {
+			calendar.setDate( value || null );
+		},
+		focus: function () {
+			calendar.$element.trigger( 'focus' );
+		}
+	};
+}
+
+var ATTRVALUE_WIDGET_FACTORIES = {
+	date: calendarAdapter,
+	number: function () {
+		return new OO.ui.NumberInputWidget();
+	}
+};
+
+function attrValueWidgetFor( inputType ) {
+	return ( ATTRVALUE_WIDGET_FACTORIES[ inputType ] || function () {
+		return new OO.ui.TextInputWidget();
+	} )();
+}
+
+function AttrValueDialog( config ) {
+	AttrValueDialog.super.call( this, config );
+}
+OO.inheritClass( AttrValueDialog, OO.ui.ProcessDialog );
+AttrValueDialog.static.name = 'aknEditorAttrValueDialog';
+AttrValueDialog.static.size = 'medium';
+AttrValueDialog.static.actions = [
+	{ action: 'done', label: mw.msg( 'aknedit-attrvalue-done' ), flags: [ 'primary', 'progressive' ] },
+	{ label: mw.msg( 'aknedit-cancel' ), flags: 'safe' }
+];
+
+AttrValueDialog.prototype.initialize = function () {
+	AttrValueDialog.super.prototype.initialize.call( this );
+	this.$fieldContainer = $( '<div>' );
+	this.$body.append( this.$fieldContainer );
+};
+
+AttrValueDialog.prototype.getSetupProcess = function ( data ) {
+	return AttrValueDialog.super.prototype.getSetupProcess.call( this, data ).next( function () {
+		this.onDone = data.onDone;
+		this.input = attrValueWidgetFor( data.inputType );
+		this.input.setValue( data.initialValue || '' );
+		this.field = new OO.ui.FieldLayout( this.input, { align: 'top', label: mw.msg( data.msgKey ) } );
+		this.$fieldContainer.empty().append( this.field.$element );
+	}, this );
+};
+
+AttrValueDialog.prototype.getReadyProcess = function ( data ) {
+	return AttrValueDialog.super.prototype.getReadyProcess.call( this, data ).next( function () {
+		this.input.focus();
+	}, this );
+};
+
+AttrValueDialog.prototype.getActionProcess = function ( action ) {
+	if ( action === 'done' ) {
+		return new OO.ui.Process( function () {
+			this.onDone( this.input.getValue() );
+			this.close();
+		}, this );
+	}
+	return AttrValueDialog.super.prototype.getActionProcess.call( this, action );
+};
+
+AttrValueDialog.prototype.getBodyHeight = function () {
+	return Math.max( this.field.$element.outerHeight( true ) || 0, 150 );
 };
 
 /**
@@ -361,14 +588,15 @@ ElementPane.prototype.setElement = function ( el, onRelabel ) {
 	// content, never both, and in this corpus containers only ever hold children. Showing
 	// an always-empty content field on them would be misleading, so it's omitted entirely.
 	if ( formConfigFor( el.localName ).content ) {
-		var contentField = new RawContentField( app, function ( create ) {
+		var getContentEl = function ( create ) {
 			var content = firstChild( el, 'content' );
 			if ( !content && create ) {
 				content = app.doc.createElementNS( AKN_NS, 'content' );
 				el.appendChild( content );
 			}
 			return content;
-		} );
+		};
+		var contentField = new RawContentField( app, getContentEl );
 
 		// No `autosize` — OOUI disables manual resize (`resize: none`) on autosized
 		// textareas, and this field needs to stay resizable by hand for long content.
@@ -391,9 +619,71 @@ ElementPane.prototype.setElement = function ( el, onRelabel ) {
 				contentLayout.setErrors( [ mw.msg( 'aknedit-field-content-error' ) ] );
 			}
 		} );
+
+		// Both modes stay fully editable — this isn't "edit XML / look at a static render",
+		// it's two live views of the one `<content>` element. Rich text commits into it on a
+		// debounce (mirroring the XML textarea's own 'change' handler above) so the live
+		// document is always current regardless of which mode is active when Save happens,
+		// the element pane closes, or the mode is flipped again.
+		var $richEl = $( '<div>' )
+			.addClass( 'akn-editor-dialog-content akn-editor-richtext' )
+			.attr( 'contenteditable', 'true' )
+			.hide();
+		var richEl = $richEl[ 0 ];
+		var mode = 'xml';
+
+		var getTarget = function () {
+			return mode === 'xml' ? { mode: 'xml', input: contentInput } : { mode: 'richtext', el: richEl };
+		};
+
+		var inlineToolbar = buildInlineToolbar( app, getTarget );
+
+		var commitRichTextNow = function () {
+			try {
+				contentField.set( editableToXmlString( richEl ) );
+				contentLayout.setErrors( [] );
+			} catch ( e ) {
+				contentLayout.setErrors( [ mw.msg( 'aknedit-field-content-error' ) ] );
+			}
+		};
+		$richEl.on( 'input', mw.util.debounce( commitRichTextNow, 300 ) );
+
+		var modeSelect = new OO.ui.ButtonSelectWidget( {
+			items: [
+				new OO.ui.ButtonOptionWidget( { data: 'xml', label: mw.msg( 'aknedit-content-mode-xml' ) } ),
+				new OO.ui.ButtonOptionWidget( { data: 'richtext', label: mw.msg( 'aknedit-content-mode-richtext' ) } )
+			]
+		} );
+		modeSelect.selectItemByData( 'xml' );
+		modeSelect.on( 'select', function ( item ) {
+			var newMode = item.getData();
+			if ( mode === 'richtext' && newMode === 'xml' ) {
+				commitRichTextNow();
+			}
+			mode = newMode;
+			if ( mode === 'richtext' ) {
+				while ( richEl.firstChild ) {
+					richEl.removeChild( richEl.firstChild );
+				}
+				var built = xmlToEditable( getContentEl( false ) );
+				while ( built.firstChild ) {
+					richEl.appendChild( built.firstChild );
+				}
+				contentInput.$element.hide();
+				$richEl.show();
+			} else {
+				contentInput.setValue( contentField.get() );
+				$richEl.hide();
+				contentInput.$element.show();
+			}
+			inlineToolbar.toolbar.emit( 'updateState' );
+		} );
+
 		// Prepended into the field's own body, right above the textarea it belongs to —
 		// $field is FieldLayout's real, documented container for the field widget.
-		contentLayout.$field.prepend( buildInlineToolbar( app, contentInput ) );
+		contentLayout.$field.prepend( $richEl );
+		contentLayout.$field.prepend( inlineToolbar.$element );
+		contentLayout.$field.prepend( modeSelect.$element );
 
 		items.push( contentLayout );
 	}

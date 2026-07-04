@@ -3,7 +3,7 @@ function apiErrorDetail( code, result ) {
 }
 
 /** A small OO.ui.Tool subclass factory — avoids repeating the same boilerplate 8 times. */
-function registerTool( toolFactory, name, icon, msgKey, onSelect, displayBothIconAndLabel ) {
+function registerTool( toolFactory, name, icon, msgKey, onSelect, displayBothIconAndLabel, isDisabled ) {
 	function Tool() {
 		Tool.super.apply( this, arguments );
 	}
@@ -16,7 +16,11 @@ function registerTool( toolFactory, name, icon, msgKey, onSelect, displayBothIco
 		onSelect();
 		this.setActive( false );
 	};
-	Tool.prototype.onUpdateState = function () {};
+	Tool.prototype.onUpdateState = function () {
+		if ( isDisabled ) {
+			this.setDisabled( isDisabled() );
+		}
+	};
 	toolFactory.register( Tool );
 }
 
@@ -54,7 +58,14 @@ function registerHistoryTools( toolFactory, app ) {
 	toolFactory.register( RedoTool );
 }
 
-/** Wrap the `[start,end)` range of `input`'s text in `<tag attr="attrValue">...</tag>`. */
+/**
+ * Wrap the `[start,end)` range of `input`'s text in `<tag attr="attrValue">...</tag>`.
+ *
+ * @return {number} `start`, unchanged — callers that need to patch the (empty) attr value
+ *   in afterwards (via `patchAttrValueInInput`, once the user supplies it through
+ *   AttrValueDialog) can recompute its exact offset from this plus the fixed tag/attr
+ *   template layout used here, without needing to reparse anything.
+ */
 function wrapRange( input, start, end, tag, attr, attrValue ) {
 	var el = input.$input[ 0 ];
 	var value = el.value;
@@ -63,12 +74,36 @@ function wrapRange( input, start, end, tag, attr, attrValue ) {
 	input.setValue( value.slice( 0, start ) + openTag + value.slice( start, end ) + closeTag + value.slice( end ) );
 	el.focus();
 	el.setSelectionRange( start + openTag.length, start + openTag.length + ( end - start ) );
+	return start;
 }
 
 /** Wrap `input`'s current text selection in `<tag attr="">...</tag>`, then re-select it. */
 function wrapSelection( input, tag, attr ) {
 	var el = input.$input[ 0 ];
-	wrapRange( input, el.selectionStart, el.selectionEnd, tag, attr );
+	return wrapRange( input, el.selectionStart, el.selectionEnd, tag, attr );
+}
+
+/**
+ * Patches the (empty) attr value `wrapSelection`/`wrapRange` left behind at `tagStart`, once
+ * AttrValueDialog resolves with the real value — a direct string splice at the offset fixed
+ * by the known `'<' + tag + ' ' + attr + '="'` template layout, no reparse needed.
+ */
+function patchAttrValueInInput( input, tagStart, tag, attr, value ) {
+	var el = input.$input[ 0 ];
+	var valueStart = tagStart + ( '<' + tag + ' ' + attr + '="' ).length;
+	var text = el.value;
+	input.setValue( text.slice( 0, valueStart ) + value + text.slice( valueStart ) );
+	el.focus();
+	el.setSelectionRange( valueStart + value.length, valueStart + value.length );
+}
+
+/** Opens the shared AttrValueDialog (ext.aknEditor.dialogs.js) to fill in one attr value. */
+function openAttrValueDialog( app, def, onDone ) {
+	app.windowManager.openWindow( app.attrValueDialog, {
+		msgKey: def.msgKey,
+		inputType: def.inputType,
+		onDone: onDone
+	} );
 }
 
 /** Replace `input`'s current selection (or insert at the cursor) with a fixed block of XML. */
@@ -108,76 +143,91 @@ var SKELETON_TAGS = [
 ];
 
 /**
- * A ref/rref tool that resolves its `href` from a popup picker of the document's own local
- * eIds (`app.structureEls`), instead of leaving the attribute for the user to hand-type.
- * Same `OO.ui.PopupTool` construction pattern as the "Add" tool (registerAddTools).
+ * A ref/rref tool that opens the shared, app-level `RefDialog` (ext.aknEditor.dialogs.js) —
+ * a real modal, not a toolbar popup, since picking a cross-reference is itself a multi-step
+ * search-then-select task (local eId, or another document via AknRenderer's
+ * `action=aknreference` API, then one of its eIds) that needs proper room to work in. Works
+ * from either editing mode: captures a string offset pair (XML mode) or a cloned DOM Range
+ * (rich-text mode, where the live selection would otherwise be lost once focus moves to the
+ * modal) via `getTarget()`.
  */
-function registerRefTool( toolFactory, app, contentInput, def ) {
-	function RefTool( toolGroup, config ) {
-		RefTool.super.call( this, toolGroup, Object.assign( {
-			popup: { padded: false, head: false }
-		}, config ) );
-		this.contentInput = contentInput;
-		this.capturedStart = 0;
-		this.capturedEnd = 0;
-
-		var tool = this;
-		this.menu = new OO.ui.SelectWidget();
-		app.structureEls.forEach( function ( el ) {
-			var eId = el.getAttribute( 'eId' );
-			if ( !eId ) {
-				return;
-			}
-			tool.menu.addItems( [ new OO.ui.MenuOptionWidget( { data: eId, label: outlineLabel( el ) + ' (' + eId + ')' } ) ] );
-		} );
-		this.menu.on( 'choose', function ( item ) {
-			wrapRange( contentInput, tool.capturedStart, tool.capturedEnd, def.tag, def.attr, '#' + item.getData() );
-			tool.popup.toggle( false );
-		} );
-		this.popup.$body.append( this.menu.$element );
+function registerRefTool( toolFactory, app, def, getTarget ) {
+	function RefTool() {
+		RefTool.super.apply( this, arguments );
 	}
-	OO.inheritClass( RefTool, OO.ui.PopupTool );
+	OO.inheritClass( RefTool, OO.ui.Tool );
 	RefTool.static.name = def.name;
 	RefTool.static.icon = def.icon;
 	RefTool.static.title = mw.msg( def.msgKey );
-	RefTool.prototype.onPopupToggle = function ( isVisible ) {
-		OO.ui.PopupTool.prototype.onPopupToggle.call( this, isVisible );
-		if ( isVisible ) {
-			this.capturedStart = this.contentInput.$input[ 0 ].selectionStart;
-			this.capturedEnd = this.contentInput.$input[ 0 ].selectionEnd;
+	RefTool.prototype.onSelect = function () {
+		this.setActive( false );
+		var target = getTarget();
+		var data = { app: app, def: def, target: target };
+		if ( target.mode === 'xml' ) {
+			data.capturedStart = target.input.$input[ 0 ].selectionStart;
+			data.capturedEnd = target.input.$input[ 0 ].selectionEnd;
+		} else {
+			var sel = window.getSelection();
+			data.capturedRange = ( sel.rangeCount && target.el.contains( sel.getRangeAt( 0 ).commonAncestorContainer ) ) ?
+				sel.getRangeAt( 0 ).cloneRange() : null;
 		}
+		app.windowManager.openWindow( app.refDialog, data );
 	};
+	RefTool.prototype.onUpdateState = function () {};
 	toolFactory.register( RefTool );
 }
 
 /**
- * A small toolbar of inline-tag buttons for one content textarea, built the same way as the
+ * A small toolbar of inline-tag buttons for one content field, built the same way as the
  * main app toolbar (explicitly requested): a `bar` group for the common tags, and a `list`
  * group using OOUI's own `include: '*'` catch-all (documented on OO.ui.Toolbar#setup) for
- * the rest — no manual overflow handling needed.
+ * the rest — no manual overflow handling needed. Works against whichever editing mode
+ * (XML textarea or rich-text contenteditable) `getTarget()` currently reports, so the same
+ * toolbar instance serves both — `ElementPane.setElement` (ext.aknEditor.dialogs.js) swaps
+ * what `getTarget()` returns when the user flips the XML/Rich text toggle.
  *
  * @param {AknEditorApp} app
- * @param {OO.ui.MultilineTextInputWidget} contentInput
- * @return {jQuery}
+ * @param {Function} getTarget Returns `{ mode: 'xml', input }` or `{ mode: 'richtext', el }`.
+ * @return {{ $element: jQuery, toolbar: OO.ui.Toolbar }}
  */
-function buildInlineToolbar( app, contentInput ) {
+function buildInlineToolbar( app, getTarget ) {
 	var toolFactory = new OO.ui.ToolFactory();
 	var toolGroupFactory = new OO.ui.ToolGroupFactory();
 	var toolbar = new OO.ui.Toolbar( toolFactory, toolGroupFactory );
 
 	INLINE_TAGS_PRIMARY.concat( INLINE_TAGS_MORE ).forEach( function ( def ) {
 		if ( def.picker ) {
-			registerRefTool( toolFactory, app, contentInput, def );
+			registerRefTool( toolFactory, app, def, getTarget );
 			return;
 		}
 		registerTool( toolFactory, def.name, def.icon, def.msgKey, function () {
-			wrapSelection( contentInput, def.tag, def.attr );
+			var target = getTarget();
+			if ( target.mode === 'xml' ) {
+				var tagStart = wrapSelection( target.input, def.tag, def.attr );
+				if ( def.attr ) {
+					openAttrValueDialog( app, def, function ( value ) {
+						patchAttrValueInInput( target.input, tagStart, def.tag, def.attr, value );
+					} );
+				}
+			} else {
+				var el = wrapRichSelection( target.el, def.tag, def.attr );
+				if ( def.attr && el ) {
+					openAttrValueDialog( app, def, function ( value ) {
+						richtextSetAttr( el, def.attr, value );
+					} );
+				}
+			}
 		} );
 	} );
 
 	SKELETON_TAGS.forEach( function ( def ) {
 		registerTool( toolFactory, def.name, def.icon, def.msgKey, function () {
-			insertSkeleton( contentInput, def.xml );
+			var target = getTarget();
+			if ( target.mode === 'xml' ) {
+				insertSkeleton( target.input, def.xml );
+			}
+		}, false, function () {
+			return getTarget().mode !== 'xml';
 		} );
 	} );
 
@@ -187,7 +237,7 @@ function buildInlineToolbar( app, contentInput ) {
 	] );
 	toolbar.initialize();
 
-	return $( '<div>' ).addClass( 'akn-editor-inline-toolbar' ).append( toolbar.$element );
+	return { $element: $( '<div>' ).addClass( 'akn-editor-inline-toolbar' ).append( toolbar.$element ), toolbar: toolbar };
 }
 
 function registerAddTools( toolFactory, app ) {
