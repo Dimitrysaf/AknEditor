@@ -45,10 +45,6 @@ class AknEditAction extends FormlessAction
 			return Html::element('p', [], $this->msg('aknedit-not-akn')->text());
 		}
 
-		if ($title->inNamespace(NS_GAZETTE)) {
-			return Html::element('p', [], $this->msg('aknedit-not-supported-gazette')->text());
-		}
-
 		$content = $this->getWikiPage()->getContent();
 		$xml = $content !== null ? $content->getText() : '';
 

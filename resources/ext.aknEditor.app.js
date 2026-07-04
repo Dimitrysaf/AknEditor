@@ -8,6 +8,7 @@ function AknEditorApp( xmlText ) {
 	this.root = findRoot( this.doc );
 	this.meta = this.root ? firstChild( this.root, 'meta' ) : null;
 	this.body = this.root ? firstChild( this.root, 'body' ) : null;
+	this.isGazette = !!this.root && this.root.localName === 'officialGazette';
 	this.vocab = mw.config.get( 'wgAknVocabulary' ) || {};
 	this.structureEls = [];
 	this.eidCounter = 0;
@@ -16,7 +17,7 @@ function AknEditorApp( xmlText ) {
 	this.activeRow = null;
 	this.elementPane = null;
 	this.toolbar = null;
-	this.onDocRestored = null;
+	this.refreshMetaFields = null;
 	this.collapsedElements = new Set();
 
 	this.undoStack = [];
@@ -71,8 +72,8 @@ AknEditorApp.prototype.restoreSnapshot = function ( xmlText ) {
 
 	this.closeElementPane();
 	this.refreshOutline();
-	if ( this.onDocRestored ) {
-		this.onDocRestored();
+	if ( this.refreshMetaFields ) {
+		this.refreshMetaFields();
 	}
 	if ( this.toolbar ) {
 		this.toolbar.emit( 'updateState' );
@@ -80,7 +81,7 @@ AknEditorApp.prototype.restoreSnapshot = function ( xmlText ) {
 };
 
 /** Find-or-create an `<identification>` descendant chain under `<meta>`. */
-AknEditorApp.prototype.identificationChild = function ( localName, create ) {
+AknEditorApp.prototype.frbrChild = function ( container, localName, create ) {
 	if ( !this.meta ) {
 		return null;
 	}
@@ -88,12 +89,27 @@ AknEditorApp.prototype.identificationChild = function ( localName, create ) {
 	if ( !ident ) {
 		return null;
 	}
-	var el = firstChild( ident, localName );
+	var wrapper = firstChild( ident, container );
+	if ( !wrapper ) {
+		if ( !create ) {
+			return null;
+		}
+		wrapper = this.doc.createElementNS( AKN_NS, container );
+		ident.appendChild( wrapper );
+	}
+	var el = firstChild( wrapper, localName );
 	if ( !el && create ) {
 		el = this.doc.createElementNS( AKN_NS, localName );
-		ident.appendChild( el );
+		if ( localName === 'FRBRdate' ) {
+			el.setAttribute( 'name', 'enacted' );
+		}
+		wrapper.appendChild( el );
 	}
 	return el;
+};
+
+AknEditorApp.prototype.identificationChild = function ( localName, create ) {
+	return this.frbrChild( 'FRBRWork', localName, create );
 };
 
 /** Find-or-create the `<meta><publication>` element (absent until a law is gazetted). */
@@ -107,6 +123,97 @@ AknEditorApp.prototype.publicationEl = function ( create ) {
 		this.meta.appendChild( pub );
 	}
 	return pub;
+};
+
+/** Find-or-create a gazette's `<collectionBody>` — a direct child of the root, not of `<meta>`. */
+AknEditorApp.prototype.collectionBodyEl = function ( create ) {
+	if ( !this.root ) {
+		return null;
+	}
+	var cb = firstChild( this.root, 'collectionBody' );
+	if ( !cb && create ) {
+		cb = this.doc.createElementNS( AKN_NS, 'collectionBody' );
+		this.root.appendChild( cb );
+	}
+	return cb;
+};
+
+/** @return {Element[]} Every `<component>` embedded directly in the gazette's `<collectionBody>`. */
+AknEditorApp.prototype.listGazetteComponents = function () {
+	var cb = this.collectionBodyEl( false );
+	if ( !cb ) {
+		return [];
+	}
+	return Array.prototype.filter.call( cb.children, function ( el ) {
+		return el.localName === 'component';
+	} );
+};
+
+/** A short label for a gazette `<component>` — its embedded document's alias, or its tag name. */
+AknEditorApp.prototype.gazetteComponentLabel = function ( componentEl ) {
+	var akomaNtoso = firstChild( componentEl, 'akomaNtoso' );
+	var innerRoot = akomaNtoso ? Array.prototype.filter.call( akomaNtoso.children, function ( child ) {
+		return ROOT_TYPES.indexOf( child.localName ) !== -1;
+	} )[ 0 ] : null;
+	if ( !innerRoot ) {
+		return componentEl.getAttribute( 'eId' ) || 'component';
+	}
+	var identification = firstChild( innerRoot, 'meta' );
+	identification = identification ? firstChild( identification, 'identification' ) : null;
+	var work = identification ? firstChild( identification, 'FRBRWork' ) : null;
+	var alias = work ? firstChild( work, 'FRBRalias' ) : null;
+	return ( alias && alias.getAttribute( 'value' ) ) || innerRoot.localName;
+};
+
+/** Find-or-create a direct `<meta>` child by tag name (`<references>`, `<classification>`, `<lifecycle>`). */
+AknEditorApp.prototype.metaChild = function ( path, create ) {
+	var app = this;
+	var names = Array.isArray( path ) ? path : [ path ];
+	var parent = this.meta;
+	var el = null;
+	names.forEach( function ( name ) {
+		if ( !parent ) {
+			el = null;
+			return;
+		}
+		el = firstChild( parent, name );
+		if ( !el && create ) {
+			el = app.doc.createElementNS( AKN_NS, name );
+			parent.appendChild( el );
+		}
+		parent = el;
+	} );
+	return el;
+};
+
+/** @return {Object[]} `{ eId, showAs }` for every `<meta><references>` entry. */
+AknEditorApp.prototype.listReferences = function () {
+	var refs = this.metaChild( 'references', false );
+	if ( !refs ) {
+		return [];
+	}
+	return Array.prototype.filter.call( refs.children, function ( el ) {
+		return !!el.getAttribute( 'eId' );
+	} ).map( function ( el ) {
+		return { eId: el.getAttribute( 'eId' ), showAs: el.getAttribute( 'showAs' ) || el.getAttribute( 'eId' ) };
+	} );
+};
+
+/** @return {Object[]} `{ eId, date, type }` for every `<meta><lifecycle><eventRef>` entry. */
+AknEditorApp.prototype.listLifecycleEvents = function () {
+	var lifecycle = this.metaChild( 'lifecycle', false );
+	if ( !lifecycle ) {
+		return [];
+	}
+	return Array.prototype.filter.call( lifecycle.children, function ( el ) {
+		return el.localName === 'eventRef' && !!el.getAttribute( 'eId' );
+	} ).map( function ( el ) {
+		return {
+			eId: el.getAttribute( 'eId' ),
+			date: el.getAttribute( 'date' ) || '',
+			type: el.getAttribute( 'type' ) || ''
+		};
+	} );
 };
 
 /**
@@ -170,20 +277,30 @@ AknEditorApp.prototype.buildMetaFields = function () {
 		function ( create ) { return app.identificationChild( 'FRBRcountry', create ); }, 'value'
 	), vocab.countries );
 	dropdownField( identificationFields, 'aknedit-field-language', new AttrField(
-		function ( create ) {
-			var expr = app.meta ? firstChild( app.meta, 'identification' ) : null;
-			expr = expr ? firstChild( expr, 'FRBRExpression' ) : null;
-			if ( !expr ) {
-				return null;
-			}
-			var lang = firstChild( expr, 'FRBRlanguage' );
-			if ( !lang && create ) {
-				lang = app.doc.createElementNS( AKN_NS, 'FRBRlanguage' );
-				expr.appendChild( lang );
-			}
-			return lang;
-		}, 'language'
+		function ( create ) { return app.frbrChild( 'FRBRExpression', 'FRBRlanguage', create ); }, 'language'
 	), vocab.languages );
+	dropdownField( identificationFields, 'aknedit-field-subtype', new AttrField(
+		function ( create ) { return app.identificationChild( 'FRBRsubtype', create ); }, 'value'
+	), vocab.docTypes );
+	textField( identificationFields, 'aknedit-field-frbrname', new AttrField(
+		function ( create ) { return app.identificationChild( 'FRBRname', create ); }, 'value'
+	) );
+	textField( identificationFields, 'aknedit-field-exprdate', new AttrField(
+		function ( create ) { return app.frbrChild( 'FRBRExpression', 'FRBRdate', create ); }, 'date'
+	) );
+	textField( identificationFields, 'aknedit-field-manifuri', new AttrField(
+		function ( create ) { return app.frbrChild( 'FRBRManifestation', 'FRBRuri', create ); }, 'value'
+	) );
+
+	var authorField = new AttrField(
+		function ( create ) { return app.identificationChild( 'FRBRauthor', create ); }, 'href'
+	);
+	var authorMap = {};
+	app.listReferences().forEach( function ( ref ) {
+		authorMap[ '#' + ref.eId ] = ref.showAs;
+	} );
+	dropdownField( identificationFields, 'aknedit-field-author', authorField, authorMap );
+
 	textField( publicationFields, 'aknedit-field-fek', new AttrField(
 		function ( create ) { return app.publicationEl( create ); }, 'showAs'
 	) );
@@ -226,15 +343,17 @@ AknEditorApp.prototype.refreshOutline = function () {
 	this.structureEls = [];
 	this.activeRow = null;
 
+	function isOutlineElement( el ) {
+		return structureTypes.indexOf( el.localName ) !== -1 || el.localName === 'hcontainer';
+	}
+
 	function hasStructureChildren( el ) {
-		return Array.prototype.some.call( el.children, function ( child ) {
-			return structureTypes.indexOf( child.localName ) !== -1;
-		} );
+		return Array.prototype.some.call( el.children, isOutlineElement );
 	}
 
 	function walk( parent, level ) {
 		Array.prototype.forEach.call( parent.children, function ( child ) {
-			if ( structureTypes.indexOf( child.localName ) === -1 ) {
+			if ( !isOutlineElement( child ) ) {
 				return;
 			}
 			app.structureEls.push( child );
@@ -353,6 +472,7 @@ AknEditorApp.prototype.moveSelected = function ( offset ) {
  */
 AknEditorApp.prototype.renderAttributeTable = function ( el ) {
 	var $rows = $( '<div>' ).addClass( 'akn-editor-attr-rows' );
+	var hiddenAttrs = el.localName === 'hcontainer' ? [ 'eId', 'name', 'showAs' ] : [ 'eId' ];
 
 	function row( nameInput, valueInput, actionButton ) {
 		return $( '<div>' ).addClass( 'akn-editor-attr-row' ).append(
@@ -363,7 +483,7 @@ AknEditorApp.prototype.renderAttributeTable = function ( el ) {
 	function render() {
 		$rows.empty();
 		Array.prototype.forEach.call( el.attributes, function ( attr ) {
-			if ( attr.name === 'eId' ) {
+			if ( hiddenAttrs.indexOf( attr.name ) !== -1 ) {
 				return;
 			}
 			var currentName = attr.name;
@@ -411,13 +531,165 @@ AknEditorApp.prototype.renderAttributeTable = function ( el ) {
 		var addButton = new OO.ui.ButtonWidget( { icon: 'add', label: mw.msg( 'aknedit-attr-add' ), invisibleLabel: true, framed: false } );
 		addButton.on( 'click', function () {
 			var name = newName.getValue().trim();
-			if ( name === '' || name === 'eId' ) {
+			if ( name === '' || hiddenAttrs.indexOf( name ) !== -1 ) {
 				return;
 			}
 			el.setAttribute( name, newValue.getValue() );
 			render();
 		} );
 		$rows.append( row( newName, newValue, addButton ) );
+	}
+
+	render();
+	return $rows;
+};
+
+/**
+ * Generic repeatable-row editor for a `<meta>` list block (`<references>`,
+ * `<classification>`, `<lifecycle>`) — same add/remove interaction as renderAttributeTable,
+ * generalized to N attribute columns per row instead of a fixed name/value pair.
+ *
+ * @param {string|string[]|Function} wrapperRef Direct `<meta>` child tag/path (resolved via
+ *  `app.metaChild`), e.g. `'references'` or `[ 'analysis', 'activeModifications' ]` — or a
+ *  `function ( create )` for wrappers that aren't `<meta>`-relative at all (e.g. a gazette's
+ *  `<collectionBody>`, a direct child of the document root).
+ * @param {string|string[]} rowTagNames Row element tag name(s); an array when rows can be
+ *  more than one tag (e.g. `TLCOrganization`/`TLCPerson`) — the first is used for new rows.
+ * @param {Object[]} fieldDefs Either `{ attr, msgKey, autoGenerate }` (a plain attribute
+ *  column) or `{ kind: 'tagSelect', options }` (swaps the row's element tag on change).
+ * @param {Function} [onChange] Called after any add/remove/tag-swap/attribute edit.
+ * @return {jQuery}
+ */
+AknEditorApp.prototype.renderElementListEditor = function ( wrapperRef, rowTagNames, fieldDefs, onChange ) {
+	var app = this;
+	var tagNames = Array.isArray( rowTagNames ) ? rowTagNames : [ rowTagNames ];
+	var $rows = $( '<div>' ).addClass( 'akn-editor-meta-list-rows' );
+
+	function resolveWrapper( create ) {
+		return typeof wrapperRef === 'function' ? wrapperRef( create ) : app.metaChild( wrapperRef, create );
+	}
+
+	function notify() {
+		if ( onChange ) {
+			onChange();
+		}
+	}
+
+	function buildFieldWidget( def, el ) {
+		if ( def.kind === 'tagSelect' ) {
+			var dropdown = new OO.ui.DropdownInputWidget( { options: def.options, value: el.localName } );
+			dropdown.on( 'change', function ( newTag ) {
+				if ( newTag === el.localName ) {
+					return;
+				}
+				var replacement = app.doc.createElementNS( AKN_NS, newTag );
+				Array.prototype.forEach.call( el.attributes, function ( attr ) {
+					replacement.setAttribute( attr.name, attr.value );
+				} );
+				el.parentNode.replaceChild( replacement, el );
+				render();
+				notify();
+			} );
+			return dropdown;
+		}
+		if ( def.kind === 'select' ) {
+			var select = new OO.ui.DropdownInputWidget( {
+				options: typeof def.options === 'function' ? def.options() : def.options,
+				value: el.getAttribute( def.attr ) || ''
+			} );
+			select.on( 'change', function ( value ) {
+				if ( value === '' ) {
+					el.removeAttribute( def.attr );
+				} else {
+					el.setAttribute( def.attr, value );
+				}
+				notify();
+			} );
+			return select;
+		}
+		if ( def.kind === 'childAttr' ) {
+			function childOf( create ) {
+				var child = firstChild( el, def.childTag );
+				if ( !child && create ) {
+					child = app.doc.createElementNS( AKN_NS, def.childTag );
+					el.appendChild( child );
+				}
+				return child;
+			}
+			var existingChild = childOf( false );
+			var currentValue = existingChild ? existingChild.getAttribute( def.attr ) || '' : '';
+			var options = typeof def.options === 'function' ? def.options() : def.options;
+			var childWidget = options ?
+				new OO.ui.DropdownInputWidget( { options: options, value: currentValue } ) :
+				new OO.ui.TextInputWidget( { value: currentValue, placeholder: mw.msg( def.msgKey ) } );
+			childWidget.on( 'change', function ( value ) {
+				if ( value === '' ) {
+					var child = childOf( false );
+					if ( child ) {
+						child.removeAttribute( def.attr );
+					}
+				} else {
+					childOf( true ).setAttribute( def.attr, value );
+				}
+				notify();
+			} );
+			return childWidget;
+		}
+		var input = new OO.ui.TextInputWidget( { value: el.getAttribute( def.attr ) || '', placeholder: mw.msg( def.msgKey ) } );
+		input.on( 'change', function ( value ) {
+			if ( value === '' ) {
+				el.removeAttribute( def.attr );
+			} else {
+				el.setAttribute( def.attr, value );
+			}
+			notify();
+		} );
+		return input;
+	}
+
+	function render() {
+		$rows.empty();
+		var wrapper = resolveWrapper( false );
+		var items = wrapper ? Array.prototype.filter.call( wrapper.children, function ( child ) {
+			return tagNames.indexOf( child.localName ) !== -1;
+		} ) : [];
+
+		items.forEach( function ( el ) {
+			var removeButton = new OO.ui.ButtonWidget( {
+				icon: 'trash',
+				label: mw.msg( 'aknedit-attr-remove' ),
+				invisibleLabel: true,
+				framed: false,
+				flags: [ 'destructive' ]
+			} );
+			removeButton.on( 'click', function () {
+				el.parentNode.removeChild( el );
+				render();
+				notify();
+			} );
+
+			var $row = $( '<div>' ).addClass( 'akn-editor-meta-list-row' );
+			fieldDefs.forEach( function ( def ) {
+				$row.append( buildFieldWidget( def, el ).$element );
+			} );
+			$row.append( removeButton.$element );
+			$rows.append( $row );
+		} );
+
+		var addButton = new OO.ui.ButtonWidget( { icon: 'add', label: mw.msg( 'aknedit-attr-add' ), invisibleLabel: true, framed: false } );
+		addButton.on( 'click', function () {
+			var wrapperEl = resolveWrapper( true );
+			var newEl = app.doc.createElementNS( AKN_NS, tagNames[ 0 ] );
+			fieldDefs.forEach( function ( def ) {
+				if ( def.attr === 'eId' && def.autoGenerate ) {
+					newEl.setAttribute( 'eId', def.autoGenerate() );
+				}
+			} );
+			wrapperEl.appendChild( newEl );
+			render();
+			notify();
+		} );
+		$rows.append( $( '<div>' ).addClass( 'akn-editor-meta-list-row' ).append( addButton.$element ) );
 	}
 
 	render();
@@ -502,6 +774,56 @@ AknEditorApp.prototype.buildWorkspace = function ( elementPane ) {
 	return this.$workspace;
 };
 
+/**
+ * The gazette editing mode's workspace — no structural outline/element pane at all (a
+ * gazette's `<collectionBody>` isn't made of STRUCTURE_TYPES elements), just a
+ * `documentRef` list editor and a read-only `component` list.
+ */
+AknEditorApp.prototype.buildGazetteWorkspace = function () {
+	var app = this;
+
+	var $documentRefs = app.renderElementListEditor(
+		function ( create ) { return app.collectionBodyEl( create ); },
+		'documentRef',
+		[
+			{ attr: 'href', msgKey: 'aknedit-gazette-documentref-href' },
+			{ attr: 'showAs', msgKey: 'aknedit-gazette-documentref-showas' }
+		]
+	);
+
+	var $components = $( '<div>' ).addClass( 'akn-editor-meta-list-rows' );
+	function renderComponents() {
+		$components.empty();
+		app.listGazetteComponents().forEach( function ( componentEl ) {
+			var removeButton = new OO.ui.ButtonWidget( {
+				icon: 'trash',
+				label: mw.msg( 'aknedit-attr-remove' ),
+				invisibleLabel: true,
+				framed: false,
+				flags: [ 'destructive' ]
+			} );
+			removeButton.on( 'click', function () {
+				componentEl.parentNode.removeChild( componentEl );
+				renderComponents();
+			} );
+			$components.append(
+				$( '<div>' ).addClass( 'akn-editor-meta-list-row' ).append(
+					$( '<span>' ).text( app.gazetteComponentLabel( componentEl ) ),
+					removeButton.$element
+				)
+			);
+		} );
+	}
+	renderComponents();
+
+	return $( '<div>' ).addClass( 'akn-editor-gazette-workspace' ).append(
+		$( '<h3>' ).addClass( 'akn-editor-dialog-heading' ).text( mw.msg( 'aknedit-gazette-documentrefs-heading' ) ),
+		$documentRefs,
+		$( '<h3>' ).addClass( 'akn-editor-dialog-heading' ).text( mw.msg( 'aknedit-gazette-components-heading' ) ),
+		$components
+	);
+};
+
 /** Structural sanity check — not full AKN/RelaxNG schema validation, see plan notes. */
 AknEditorApp.prototype.runValidation = function () {
 	var issues = [];
@@ -515,10 +837,11 @@ AknEditorApp.prototype.runValidation = function () {
 		}
 		seen[ id ] = true;
 	} );
-	if ( !this.identificationChild( 'FRBRWork', false ) ) {
+	var identification = this.meta ? firstChild( this.meta, 'identification' ) : null;
+	if ( !identification || !firstChild( identification, 'FRBRWork' ) ) {
 		issues.push( mw.msg( 'aknedit-validate-missing-meta' ) );
 	}
-	if ( !this.body || this.body.children.length === 0 ) {
+	if ( !this.isGazette && ( !this.body || this.body.children.length === 0 ) ) {
 		issues.push( mw.msg( 'aknedit-validate-missing-body' ) );
 	}
 	return issues;
@@ -586,14 +909,76 @@ AknEditorApp.prototype.mount = function ( $root ) {
 	var saveDialog = new SaveDialog();
 	var metadataDialog = new MetadataDialog();
 	windowManager.addWindows( [ saveDialog, metadataDialog ] );
-	var elementPane = new ElementPane( app );
-	var metaFields = this.buildMetaFields();
-	metadataDialog.setFields( metaFields.identification, metaFields.publication );
+	var elementPane = app.isGazette ? null : new ElementPane( app );
 
-	app.onDocRestored = function () {
-		var freshMetaFields = app.buildMetaFields();
-		metadataDialog.setFields( freshMetaFields.identification, freshMetaFields.publication );
-	};
+	function refreshMetaFields() {
+		var metaFields = app.buildMetaFields();
+		metadataDialog.setFields( metaFields.identification, metaFields.publication );
+		metadataDialog.referencesPage.setContent( app.renderElementListEditor(
+			'references', [ 'TLCOrganization', 'TLCPerson' ],
+			[
+				{ kind: 'tagSelect', options: [
+					{ data: 'TLCOrganization', label: mw.msg( 'aknedit-reference-type-organization' ) },
+					{ data: 'TLCPerson', label: mw.msg( 'aknedit-reference-type-person' ) }
+				] },
+				{ attr: 'eId', msgKey: 'aknedit-reference-eid', autoGenerate: function () { return app.nextEid( 'ref' ); } },
+				{ attr: 'showAs', msgKey: 'aknedit-reference-showas' },
+				{ attr: 'href', msgKey: 'aknedit-reference-href' }
+			],
+			refreshMetaFields
+		) );
+		metadataDialog.classificationPage.setContent( app.renderElementListEditor(
+			'classification', 'keyword',
+			[
+				{ attr: 'dictionary', msgKey: 'aknedit-classification-dictionary' },
+				{ attr: 'value', msgKey: 'aknedit-classification-value' },
+				{ attr: 'showAs', msgKey: 'aknedit-classification-showas' },
+				{ attr: 'href', msgKey: 'aknedit-classification-href' }
+			]
+		) );
+		metadataDialog.lifecyclePage.setContent( app.renderElementListEditor(
+			'lifecycle', 'eventRef',
+			[
+				{ attr: 'eId', msgKey: 'aknedit-lifecycle-eid', autoGenerate: function () { return app.nextEid( 'event' ); } },
+				{ attr: 'date', msgKey: 'aknedit-lifecycle-date' },
+				{ attr: 'type', msgKey: 'aknedit-lifecycle-type' },
+				{ attr: 'source', msgKey: 'aknedit-lifecycle-source' }
+			]
+		) );
+
+		function textualModFieldDefs() {
+			return [
+				{ kind: 'select', attr: 'type', options: [
+					{ data: '', label: '—' },
+					{ data: 'repeal', label: mw.msg( 'aknedit-amendment-type-repeal' ) },
+					{ data: 'substitution', label: mw.msg( 'aknedit-amendment-type-substitution' ) },
+					{ data: 'insertion', label: mw.msg( 'aknedit-amendment-type-insertion' ) },
+					{ data: 'replacement', label: mw.msg( 'aknedit-amendment-type-replacement' ) },
+					{ data: 'renumbering', label: mw.msg( 'aknedit-amendment-type-renumbering' ) },
+					{ data: 'split', label: mw.msg( 'aknedit-amendment-type-split' ) },
+					{ data: 'join', label: mw.msg( 'aknedit-amendment-type-join' ) }
+				] },
+				{ kind: 'childAttr', childTag: 'source', attr: 'href', msgKey: 'aknedit-amendment-source' },
+				{ kind: 'childAttr', childTag: 'destination', attr: 'href', msgKey: 'aknedit-amendment-destination' },
+				{ kind: 'childAttr', childTag: 'force', attr: 'period', msgKey: 'aknedit-amendment-force', options: function () {
+					var options = app.listLifecycleEvents().map( function ( ev ) {
+						return { data: '#' + ev.eId, label: ( ev.type || ev.eId ) + ( ev.date ? ' ' + ev.date : '' ) + ' (' + ev.eId + ')' };
+					} );
+					options.unshift( { data: '', label: '—' } );
+					return options;
+				} }
+			];
+		}
+
+		metadataDialog.amendmentsPage.setContent( $( '<div>' ).append(
+			$( '<h4>' ).addClass( 'akn-editor-dialog-heading' ).text( mw.msg( 'aknedit-amendment-active-heading' ) ),
+			app.renderElementListEditor( [ 'analysis', 'activeModifications' ], 'textualMod', textualModFieldDefs() ),
+			$( '<h4>' ).addClass( 'akn-editor-dialog-heading' ).text( mw.msg( 'aknedit-amendment-passive-heading' ) ),
+			app.renderElementListEditor( [ 'analysis', 'passiveModifications' ], 'textualMod', textualModFieldDefs() )
+		) );
+	}
+	refreshMetaFields();
+	app.refreshMetaFields = refreshMetaFields;
 
 	/**
 	 * Fetch the diff and swap to the review panel of the already-open save dialog. Matches
@@ -655,23 +1040,26 @@ AknEditorApp.prototype.mount = function ( $root ) {
 	var toolbar = new OO.ui.Toolbar( toolFactory, toolGroupFactory, { actions: true } );
 	app.toolbar = toolbar;
 
-	var addToolNames = registerAddTools( toolFactory, app );
 	registerHistoryTools( toolFactory, app );
 	registerTool( toolFactory, 'validate', 'check', 'aknedit-tool-validate', function () { app.showValidation(); }, true );
 	registerTool( toolFactory, 'metadata', 'tag', 'aknedit-tool-metadata', function () { windowManager.openWindow( metadataDialog ); }, true );
 
-	toolbar.setup( [
-		{
+	var toolbarGroups = [
+		{ name: 'history', type: 'bar', include: [ 'undo', 'redo' ] },
+		{ name: 'page', type: 'bar', include: [ 'validate', 'metadata' ] }
+	];
+	if ( !app.isGazette ) {
+		var addToolNames = registerAddTools( toolFactory, app );
+		toolbarGroups.unshift( {
 			name: 'add',
 			type: 'list',
 			icon: 'add',
 			invisibleLabel: false,
 			label: mw.msg( 'aknedit-tool-add' ),
 			include: addToolNames
-		},
-		{ name: 'history', type: 'bar', include: [ 'undo', 'redo' ] },
-		{ name: 'page', type: 'bar', include: [ 'validate', 'metadata' ] }
-	] );
+		} );
+	}
+	toolbar.setup( toolbarGroups );
 	toolbar.initialize();
 	toolbar.emit( 'updateState' );
 
@@ -689,7 +1077,7 @@ AknEditorApp.prototype.mount = function ( $root ) {
 	toolbar.$actions.append( saveActions.$element );
 	var $toolbar = $( '<div>' ).addClass( 'akn-editor-toolbar' ).append( toolbar.$element );
 
-	var $workspace = this.buildWorkspace( elementPane );
+	var $workspace = app.isGazette ? app.buildGazetteWorkspace() : app.buildWorkspace( elementPane );
 
 	$root.empty().append( $toolbar, $workspace );
 

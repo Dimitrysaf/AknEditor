@@ -1,16 +1,7 @@
 'use strict';
 
 var AKN_NS = 'http://docs.oasis-open.org/legaldocml/ns/akn/3.0';
-var ROOT_TYPES = [ 'act', 'bill', 'doc' ];
-
-/** Hierarchical elements that hold nested structural children, never their own prose. */
-var CONTAINER_TYPES = [ 'book', 'tome', 'part', 'title', 'subtitle', 'chapter',
-	'subchapter', 'section', 'subsection', 'division', 'list' ];
-
-/** Which of ElementPane's optional fields apply to a given structural element type. */
-function formConfigFor( localName ) {
-	return { content: CONTAINER_TYPES.indexOf( localName ) === -1 };
-}
+var ROOT_TYPES = [ 'act', 'bill', 'doc', 'officialGazette' ];
 
 /**
  * @param {Element} parent
@@ -57,5 +48,15 @@ function elementTypeLabel( type ) {
 }
 
 function outlineLabel( el ) {
+	if ( el.localName === 'hcontainer' ) {
+		var hname = el.getAttribute( 'name' );
+		if ( hname && HCONTAINER_LABELS[ hname ] ) {
+			return HCONTAINER_LABELS[ hname ];
+		}
+		var showAs = el.getAttribute( 'showAs' );
+		if ( showAs ) {
+			return showAs;
+		}
+	}
 	return elementTypeLabel( el.localName );
 }

@@ -126,6 +126,10 @@ MetaPage.prototype.setFields = function ( fields ) {
 	this.$element.empty().append( new OO.ui.FieldsetLayout( { items: fields } ).$element );
 };
 
+MetaPage.prototype.setContent = function ( $content ) {
+	this.$element.empty().append( $content );
+};
+
 /**
  * Metadata form, moved into a dialog so the outline can span the full width. Structured as an
  * outlined OO.ui.BookletLayout — matching VE's real ve.ui.MWMetaDialog (verified against
@@ -149,8 +153,19 @@ MetadataDialog.prototype.initialize = function () {
 	MetadataDialog.super.prototype.initialize.call( this );
 	this.identificationPage = new MetaPage( 'identification', mw.msg( 'aknedit-metadata-page-identification' ) );
 	this.publicationPage = new MetaPage( 'publication', mw.msg( 'aknedit-metadata-page-publication' ) );
+	this.referencesPage = new MetaPage( 'references', mw.msg( 'aknedit-metadata-page-references' ) );
+	this.classificationPage = new MetaPage( 'classification', mw.msg( 'aknedit-metadata-page-classification' ) );
+	this.lifecyclePage = new MetaPage( 'lifecycle', mw.msg( 'aknedit-metadata-page-lifecycle' ) );
+	this.amendmentsPage = new MetaPage( 'amendments', mw.msg( 'aknedit-metadata-page-amendments' ) );
 	this.bookletLayout = new OO.ui.BookletLayout( { outlined: true } );
-	this.bookletLayout.addPages( [ this.identificationPage, this.publicationPage ] );
+	this.bookletLayout.addPages( [
+		this.identificationPage,
+		this.publicationPage,
+		this.referencesPage,
+		this.classificationPage,
+		this.lifecyclePage,
+		this.amendmentsPage
+	] );
 	this.$body.append( this.bookletLayout.$element );
 };
 
@@ -258,7 +273,7 @@ ElementPane.prototype.setElement = function ( el, onRelabel ) {
 		el.setAttribute( 'eId', app.nextEid( el.localName ) );
 	}
 
-	this.$heading.text( elementTypeLabel( el.localName ) );
+	this.$heading.text( outlineLabel( el ) );
 	this.moveUpButton.setDisabled( !app.canMoveSelected( -1 ) );
 	this.moveDownButton.setDisabled( !app.canMoveSelected( 1 ) );
 
@@ -305,6 +320,42 @@ ElementPane.prototype.setElement = function ( el, onRelabel ) {
 		new OO.ui.FieldLayout( headingInput, { label: mw.msg( 'aknedit-field-heading' ), align: 'top' } )
 	];
 
+	if ( el.localName === 'hcontainer' ) {
+		var nameOptions = Object.keys( HCONTAINER_LABELS ).map( function ( key ) {
+			return { data: key, label: HCONTAINER_LABELS[ key ] + ' (' + key + ')' };
+		} );
+		var currentHname = el.getAttribute( 'name' ) || '';
+		if ( currentHname && nameOptions.every( function ( o ) { return o.data !== currentHname; } ) ) {
+			nameOptions.push( { data: currentHname, label: currentHname } );
+		}
+		nameOptions.unshift( { data: '', label: '—' } );
+
+		var hnameInput = new OO.ui.DropdownInputWidget( { options: nameOptions, value: currentHname } );
+		hnameInput.on( 'change', function ( value ) {
+			if ( value === '' ) {
+				el.removeAttribute( 'name' );
+			} else {
+				el.setAttribute( 'name', value );
+			}
+			relabel();
+		} );
+
+		var showAsInput = new OO.ui.TextInputWidget( { value: el.getAttribute( 'showAs' ) || '' } );
+		showAsInput.on( 'change', function ( value ) {
+			if ( value === '' ) {
+				el.removeAttribute( 'showAs' );
+			} else {
+				el.setAttribute( 'showAs', value );
+			}
+			relabel();
+		} );
+
+		items.push(
+			new OO.ui.FieldLayout( hnameInput, { label: mw.msg( 'aknedit-field-hcontainer-name' ), align: 'top' } ),
+			new OO.ui.FieldLayout( showAsInput, { label: mw.msg( 'aknedit-field-hcontainer-showas' ), align: 'top' } )
+		);
+	}
+
 	// Pure containers (part/chapter/...) hold nested structural children, not their own
 	// prose — per AKN's content model a hierarchical element has *either* children *or*
 	// content, never both, and in this corpus containers only ever hold children. Showing
@@ -342,7 +393,7 @@ ElementPane.prototype.setElement = function ( el, onRelabel ) {
 		} );
 		// Prepended into the field's own body, right above the textarea it belongs to —
 		// $field is FieldLayout's real, documented container for the field widget.
-		contentLayout.$field.prepend( buildInlineToolbar( contentInput ) );
+		contentLayout.$field.prepend( buildInlineToolbar( app, contentInput ) );
 
 		items.push( contentLayout );
 	}

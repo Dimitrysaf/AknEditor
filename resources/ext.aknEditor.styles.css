@@ -210,6 +210,24 @@ body.action-aknedit #mw-content-text {
 	min-width: 0;
 }
 
+.akn-editor-meta-list-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25em;
+}
+
+.akn-editor-meta-list-row {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+}
+
+.akn-editor-meta-list-row > .oo-ui-textInputWidget,
+.akn-editor-meta-list-row > .oo-ui-dropdownInputWidget {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
 .akn-editor-dialog-content {
 	overflow-x: auto;
 }
