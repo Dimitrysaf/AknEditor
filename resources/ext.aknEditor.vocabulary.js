@@ -1,15 +1,5 @@
 'use strict';
 
-var CONTAINER_TYPES = [ 'book', 'tome', 'part', 'title', 'subtitle', 'chapter',
-	'subchapter', 'section', 'subsection', 'division', 'list' ];
-
-var TITLED_TYPES = [ 'book', 'tome', 'part', 'title', 'subtitle', 'chapter', 'subchapter',
-	'section', 'subsection', 'division', 'article', 'clause' ];
-
-function formConfigFor( localName ) {
-	return { content: CONTAINER_TYPES.indexOf( localName ) === -1 };
-}
-
 var INLINE_ATTR_BY_TAG = {
 	term: 'refersTo',
 	def: 'refersTo',
@@ -92,10 +82,5 @@ var INLINE_TAG_REGISTRY = buildInlineTagRegistry();
 var INLINE_TAG_BY_NAME = INLINE_TAG_REGISTRY.byName;
 var INLINE_TAGS_PRIMARY = INLINE_TAG_REGISTRY.primary;
 var INLINE_TAGS_MORE = INLINE_TAG_REGISTRY.more;
-
-function headingLevel( localName ) {
-	var vocab = mw.config.get( 'wgAknVocabulary' ) || {};
-	return ( vocab.headingLevels && vocab.headingLevels[ localName ] ) || 6;
-}
 
 var HCONTAINER_LABELS = ( mw.config.get( 'wgAknVocabulary' ) || {} ).hcontainerLabels || {};

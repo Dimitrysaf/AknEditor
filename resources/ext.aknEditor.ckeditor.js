@@ -173,6 +173,9 @@ class AknRawFallback extends CKE.Plugin {
 
 		conversion.for( 'upcast' ).add( function ( dispatcher ) {
 			dispatcher.on( 'element', function ( evt, data, api ) {
+				if ( [ 'ol', 'ul', 'li', 'br' ].indexOf( data.viewItem.name ) !== -1 ) {
+					return;
+				}
 				if ( !api.consumable.test( data.viewItem, { name: true } ) ) {
 					return;
 				}
@@ -230,8 +233,21 @@ class AknInlineSpans extends CKE.Plugin {
 
 			schema.extend( '$text', { allowAttributes: modelKey } );
 
+			var viewMatcher = entry.tag;
+			if ( entry.name === 'note' ) {
+				viewMatcher = function ( el ) {
+					if ( !( el.is && el.is( 'element', 'note' ) ) ) {
+						return null;
+					}
+					var hasElementChild = Array.from( el.getChildren() ).some( function ( child ) {
+						return child.is && child.is( 'element' );
+					} );
+					return hasElementChild ? null : { name: true };
+				};
+			}
+
 			conversion.for( 'upcast' ).elementToAttribute( {
-				view: entry.tag,
+				view: viewMatcher,
 				model: {
 					key: modelKey,
 					value: function ( viewElement ) {

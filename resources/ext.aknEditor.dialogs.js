@@ -223,7 +223,7 @@ RefDialog.prototype.doSearch = function ( query ) {
 	}
 	new mw.Api().get( { action: 'aknreference', op: 'search', query: query, formatversion: 2 } ).done( function ( result ) {
 		dialog.docMenu.clearItems();
-		( result.matches || [] ).forEach( function ( match ) {
+		( ( result.aknreference && result.aknreference.matches ) || [] ).forEach( function ( match ) {
 			dialog.docMenu.addItems( [ new OO.ui.MenuOptionWidget( {
 				data: match,
 				label: match.alias ? match.title + ' — ' + match.alias : match.title
@@ -241,7 +241,7 @@ RefDialog.prototype.chooseDoc = function ( match ) {
 	this.eidMenu.toggle( true ).clearItems();
 	this.eidMenu.addItems( [ new OO.ui.MenuOptionWidget( { data: '', label: mw.msg( 'aknedit-ref-fragment-whole' ) } ) ] );
 	new mw.Api().get( { action: 'aknreference', op: 'eids', pageid: match.pageid, formatversion: 2 } ).done( function ( result ) {
-		( result.eids || [] ).forEach( function ( row ) {
+		( ( result.aknreference && result.aknreference.eids ) || [] ).forEach( function ( row ) {
 			var label = ( row.num ? row.num + ' ' : '' ) + ( row.heading || row.eid );
 			dialog.eidMenu.addItems( [ new OO.ui.MenuOptionWidget( { data: row.eid, label: label + ' (' + row.eid + ')' } ) ] );
 		} );
@@ -362,32 +362,3 @@ AttrValueDialog.prototype.getBodyHeight = function () {
 	return Math.max( this.field.$element.outerHeight( true ) || 0, 150 );
 };
 
-function PropertiesDialog( config ) {
-	PropertiesDialog.super.call( this, config );
-}
-OO.inheritClass( PropertiesDialog, OO.ui.ProcessDialog );
-PropertiesDialog.static.name = 'aknEditorPropertiesDialog';
-PropertiesDialog.static.size = 'medium';
-PropertiesDialog.static.actions = [
-	{ label: mw.msg( 'aknedit-cancel' ), flags: 'safe' }
-];
-
-PropertiesDialog.prototype.initialize = function () {
-	PropertiesDialog.super.prototype.initialize.call( this );
-	this.$content = $( '<div>' );
-	this.$body.append( this.$content );
-};
-
-PropertiesDialog.prototype.getSetupProcess = function ( data ) {
-	return PropertiesDialog.super.prototype.getSetupProcess.call( this, data ).next( function () {
-		this.title.setLabel( elementTypeLabel( data.localName ) );
-		this.$content.empty().append(
-			$( '<h4>' ).addClass( 'akn-editor-dialog-heading' ).text( mw.msg( 'aknedit-attr-heading' ) ),
-			data.app.renderAttributeTable( data.attrAdapter )
-		);
-	}, this );
-};
-
-PropertiesDialog.prototype.getBodyHeight = function () {
-	return Math.max( this.$content.outerHeight( true ) || 0, 200 );
-};

@@ -163,6 +163,7 @@ body.akn-editor-open #mw-teleport-target {
 }
 
 .akn-editor-page-content {
+	display: flow-root;
 	min-height: 100%;
 }
 
@@ -174,6 +175,37 @@ body.akn-editor-open #mw-teleport-target {
 .akn-editor-target-selected {
 	outline: 1px dashed var( --border-color-progressive, #36c );
 	outline-offset: 3px;
+}
+
+.akn-editor-target-selected-container > .akn-designation,
+.akn-editor-target-selected-container > .akn-rubric {
+	outline: 1px dashed var( --border-color-progressive, #36c );
+	outline-offset: 3px;
+}
+
+.akn-editor-selected-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25em;
+	margin-top: 0.5em;
+}
+
+.akn-editor-inline .ck-content ol {
+	margin: 0.25em 0 0.25em 0;
+	padding-inline-start: 1.6em;
+}
+
+.akn-editor-inline .ck-content ol ol {
+	list-style-type: lower-greek;
+}
+
+.akn-editor-inline .ck-content ol ol ol {
+	list-style-type: lower-greek;
+}
+
+.akn-editor-note-body,
+.akn-editor-article-body {
+	min-width: 0;
 }
 
 .akn-editor-hidden-part {
@@ -298,23 +330,6 @@ body.akn-editor-open #mw-teleport-target {
 
 .akn-editor-meta-grid .oo-ui-fieldLayout {
 	margin-top: 1em;
-}
-
-.akn-editor-attr-rows {
-	display: flex;
-	flex-direction: column;
-	gap: 0.25em;
-}
-
-.akn-editor-attr-row {
-	display: flex;
-	align-items: center;
-	gap: 0.5em;
-}
-
-.akn-editor-attr-row > .oo-ui-textInputWidget {
-	flex: 1 1 0;
-	min-width: 0;
 }
 
 .akn-editor-meta-list-rows {

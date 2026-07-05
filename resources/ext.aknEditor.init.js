@@ -3,7 +3,11 @@ $( function () {
 	if ( $root.length === 0 ) {
 		return;
 	}
-	var app = new AknEditorApp( mw.config.get( 'wgAknEditorXml' ) || '' );
+	var xml = mw.config.get( 'wgAknEditorXml' ) || '';
+	if ( xml.trim() === '' ) {
+		xml = aknSkeletonDocument();
+	}
+	var app = new AknEditorApp( xml );
 	if ( !app.root ) {
 		$root.text( mw.msg( 'aknedit-parse-error' ) );
 		return;
@@ -11,4 +15,5 @@ $( function () {
 	var $overlay = $( '<div>' ).addClass( 'akn-editor-overlay' );
 	$( document.body ).addClass( 'akn-editor-open' ).append( $overlay );
 	app.mount( $overlay );
+	window.aknEditorApp = app;
 } );

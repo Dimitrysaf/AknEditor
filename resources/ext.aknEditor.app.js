@@ -7,7 +7,7 @@ function AknEditorApp( xmlText ) {
 	this.body = this.root ? firstChild( this.root, 'body' ) : null;
 	this.isGazette = !!this.root && this.root.localName === 'officialGazette';
 	this.vocab = mw.config.get( 'wgAknVocabulary' ) || {};
-	this.structureTypes = ( this.vocab.structureTypes || [] ).concat( [ 'hcontainer' ] );
+	this.displayTypes = AKN_DISPLAY_TYPES;
 	this.eidCounter = 0;
 	this.outlineGroup = null;
 	this.refreshMetaFields = null;
@@ -25,13 +25,13 @@ function AknEditorApp( xmlText ) {
 	this.aknBlockListPlugin = buildAknBlockListPlugin();
 	this.aknQuotedStructurePlugin = buildAknQuotedStructurePlugin();
 
-	if ( this.body ) {
-		this.ensureEids();
+	if ( this.body && !this.isGazette ) {
+		aknAutoNumber( this.doc, this.body );
 	}
 }
 
 AknEditorApp.prototype.isStructural = function ( el ) {
-	return !!el && el.nodeType === 1 && this.structureTypes.indexOf( el.localName ) !== -1;
+	return !!el && el.nodeType === 1 && this.displayTypes.indexOf( el.localName ) !== -1;
 };
 
 AknEditorApp.prototype.byEid = function ( eid ) {
@@ -52,28 +52,15 @@ AknEditorApp.prototype.byEid = function ( eid ) {
 	return found;
 };
 
-AknEditorApp.prototype.ensureEids = function () {
-	var app = this;
-	( function walk( parent ) {
-		Array.prototype.forEach.call( parent.children, function ( child ) {
-			if ( app.isStructural( child ) && !child.getAttribute( 'eId' ) ) {
-				child.setAttribute( 'eId', app.nextEid( child.localName ) );
-			}
-			walk( child );
-		} );
-	}( this.body ) );
-};
-
 AknEditorApp.prototype.editableUnitFor = function ( el ) {
-	var unit = null;
 	var node = el;
 	while ( node && node !== this.body && node.nodeType === 1 ) {
-		if ( this.isStructural( node ) && formConfigFor( node.localName ).content ) {
-			unit = node;
+		if ( node.localName === 'article' ) {
+			return node;
 		}
 		node = node.parentNode;
 	}
-	return unit;
+	return null;
 };
 
 AknEditorApp.prototype.frbrChild = function ( container, localName, create ) {
@@ -446,11 +433,16 @@ AknEditorApp.prototype.scrollToEid = function ( eid ) {
 
 AknEditorApp.prototype.applySelectionHighlight = function () {
 	var app = this;
-	this.$pages.find( '.akn-editor-target-selected' ).removeClass( 'akn-editor-target-selected' );
+	this.$pages.find( '.akn-editor-target-selected, .akn-editor-target-selected-container' )
+		.removeClass( 'akn-editor-target-selected akn-editor-target-selected-container' );
 	if ( this.selectedEl ) {
 		var eid = this.selectedEl.getAttribute( 'eId' );
 		if ( eid ) {
-			this.renderedParts( eid ).addClass( 'akn-editor-target-selected' );
+			this.renderedParts( eid ).addClass(
+				this.selectedEl.localName === 'article' ?
+					'akn-editor-target-selected' :
+					'akn-editor-target-selected-container'
+			);
 		}
 	}
 	if ( this.outlineGroup ) {
@@ -650,7 +642,7 @@ AknEditorApp.prototype.mountInlineEditor = function ( xmlEl ) {
 	$container.insertBefore( $parts.first() );
 	$parts.addClass( 'akn-editor-hidden-part' );
 
-	var xml = new XMLSerializer().serializeToString( xmlEl );
+	var xml = aknArticleToEditorXml( xmlEl );
 	createAknElementEditor( this, $editorHost[ 0 ], xml ).then( function ( handle ) {
 		app.inlineEditor = { handle: handle, xmlEl: xmlEl, eid: eid, $container: $container, $parts: $parts, $page: $page };
 		handle.editor.editing.view.focus();
@@ -686,11 +678,13 @@ AknEditorApp.prototype.commitInlineEditor = function ( rerender ) {
 		OO.ui.alert( mw.msg( 'aknedit-render-error', 'invalid XML' ) );
 		return;
 	}
+	aknEditorListsToAkn( parsed, parsed.documentElement );
 	var parent = ie.xmlEl.parentNode;
 	Array.prototype.slice.call( parsed.documentElement.childNodes ).forEach( function ( node ) {
 		parent.insertBefore( app.doc.importNode( node, true ), ie.xmlEl );
 	} );
 	parent.removeChild( ie.xmlEl );
+	aknAutoNumber( this.doc, this.body );
 	if ( this.selectedEl === ie.xmlEl ) {
 		this.selectedEl = null;
 		this.pendingSelectEid = ie.eid;
@@ -745,34 +739,72 @@ AknEditorApp.prototype.onDocumentClick = function ( e ) {
 	}
 };
 
+AknEditorApp.prototype.insertionPointFor = function ( type ) {
+	var rank = this.displayTypes.indexOf( type );
+	var anchor = this.selectedEl;
+	if ( !anchor || !anchor.parentNode ) {
+		return { parent: this.body, before: null };
+	}
+	var node = anchor;
+	while ( node && node !== this.body ) {
+		var nodeRank = this.displayTypes.indexOf( node.localName );
+		if ( nodeRank === rank ) {
+			return { parent: node.parentNode, before: node.nextSibling };
+		}
+		if ( nodeRank !== -1 && nodeRank < rank ) {
+			var childAnchor = anchor;
+			while ( childAnchor.parentNode !== node ) {
+				childAnchor = childAnchor.parentNode;
+			}
+			return { parent: node, before: childAnchor.nextSibling };
+		}
+		node = node.parentNode;
+	}
+	return { parent: this.body, before: null };
+};
+
 AknEditorApp.prototype.insertElement = function ( type ) {
 	if ( !this.body ) {
 		return;
 	}
 	this.commitInlineEditor( false );
 	var el = this.doc.createElementNS( AKN_NS, type );
-	var eid = this.nextEid( type );
-	el.setAttribute( 'eId', eid );
-	var num = this.doc.createElementNS( AKN_NS, 'num' );
-	num.textContent = elementTypeLabel( type );
-	el.appendChild( num );
-	if ( formConfigFor( type ).content ) {
+	el.appendChild( this.doc.createElementNS( AKN_NS, 'num' ) );
+	el.appendChild( this.doc.createElementNS( AKN_NS, 'heading' ) );
+	if ( type === 'article' ) {
+		var paragraph = this.doc.createElementNS( AKN_NS, 'paragraph' );
 		var content = this.doc.createElementNS( AKN_NS, 'content' );
-		var p = this.doc.createElementNS( AKN_NS, 'p' );
-		content.appendChild( p );
-		el.appendChild( content );
-	} else {
-		el.appendChild( this.doc.createElementNS( AKN_NS, 'heading' ) );
+		content.appendChild( this.doc.createElementNS( AKN_NS, 'p' ) );
+		paragraph.appendChild( this.doc.createElementNS( AKN_NS, 'num' ) );
+		paragraph.appendChild( content );
+		el.appendChild( paragraph );
 	}
-	if ( this.selectedEl && this.selectedEl.parentNode ) {
-		this.selectedEl.parentNode.insertBefore( el, this.selectedEl.nextSibling );
-	} else {
-		this.body.appendChild( el );
-	}
+	var point = this.insertionPointFor( type );
+	point.parent.insertBefore( el, point.before );
+	aknAutoNumber( this.doc, this.body );
+	var eid = el.getAttribute( 'eId' );
 	this.pendingSelectEid = eid;
-	if ( formConfigFor( type ).content ) {
+	if ( type === 'article' ) {
 		this.pendingEditEid = eid;
 	}
+	this.renderDocument();
+};
+
+AknEditorApp.prototype.moveElement = function ( xmlEl, direction ) {
+	var parent = xmlEl.parentNode;
+	if ( !parent ) {
+		return;
+	}
+	var sibling = direction < 0 ? xmlEl.previousElementSibling : xmlEl.nextElementSibling;
+	while ( sibling && !this.isStructural( sibling ) ) {
+		sibling = direction < 0 ? sibling.previousElementSibling : sibling.nextElementSibling;
+	}
+	if ( !sibling ) {
+		return;
+	}
+	parent.insertBefore( xmlEl, direction < 0 ? sibling : sibling.nextSibling );
+	aknAutoNumber( this.doc, this.body );
+	this.pendingSelectEid = xmlEl.getAttribute( 'eId' );
 	this.renderDocument();
 };
 
@@ -786,86 +818,9 @@ AknEditorApp.prototype.removeElement = function ( xmlEl ) {
 		if ( app.selectedEl === xmlEl ) {
 			app.selectedEl = null;
 		}
+		aknAutoNumber( app.doc, app.body );
 		app.renderDocument();
 	} );
-};
-
-AknEditorApp.prototype.openPropertiesPopover = function ( attrAdapter, localName ) {
-	this.windowManager.openWindow( this.propertiesDialog, { app: this, attrAdapter: attrAdapter, localName: localName } );
-};
-
-AknEditorApp.prototype.renderAttributeTable = function ( el ) {
-	var $rows = $( '<div>' ).addClass( 'akn-editor-attr-rows' );
-	var hiddenAttrs = [ 'eId' ];
-
-	function row( nameInput, valueInput, actionButton ) {
-		return $( '<div>' ).addClass( 'akn-editor-attr-row' ).append(
-			nameInput.$element, valueInput.$element, actionButton.$element
-		);
-	}
-
-	function render() {
-		$rows.empty();
-		Array.prototype.forEach.call( el.attributes, function ( attr ) {
-			if ( hiddenAttrs.indexOf( attr.name ) !== -1 ) {
-				return;
-			}
-			var currentName = attr.name;
-			var nameInput = new OO.ui.TextInputWidget( { value: attr.name } );
-			var valueInput = new OO.ui.TextInputWidget( { value: attr.value } );
-			var removeButton = new OO.ui.ButtonWidget( {
-				icon: 'trash',
-				label: mw.msg( 'aknedit-attr-remove' ),
-				invisibleLabel: true,
-				framed: false,
-				flags: [ 'destructive' ]
-			} );
-
-			nameInput.on( 'change', function ( newName ) {
-				newName = newName.trim();
-				if ( newName === currentName ) {
-					return;
-				}
-				var value = el.getAttribute( currentName ) || '';
-				if ( currentName !== '' ) {
-					el.removeAttribute( currentName );
-				}
-				if ( newName !== '' ) {
-					el.setAttribute( newName, value );
-				}
-				currentName = newName;
-			} );
-			valueInput.on( 'change', function ( value ) {
-				if ( currentName !== '' ) {
-					el.setAttribute( currentName, value );
-				}
-			} );
-			removeButton.on( 'click', function () {
-				if ( currentName !== '' ) {
-					el.removeAttribute( currentName );
-				}
-				render();
-			} );
-
-			$rows.append( row( nameInput, valueInput, removeButton ) );
-		} );
-
-		var newName = new OO.ui.TextInputWidget( { placeholder: mw.msg( 'aknedit-attr-name' ) } );
-		var newValue = new OO.ui.TextInputWidget( { placeholder: mw.msg( 'aknedit-attr-value' ) } );
-		var addButton = new OO.ui.ButtonWidget( { icon: 'add', label: mw.msg( 'aknedit-attr-add' ), invisibleLabel: true, framed: false } );
-		addButton.on( 'click', function () {
-			var name = newName.getValue().trim();
-			if ( name === '' || hiddenAttrs.indexOf( name ) !== -1 ) {
-				return;
-			}
-			el.setAttribute( name, newValue.getValue() );
-			render();
-		} );
-		$rows.append( row( newName, newValue, addButton ) );
-	}
-
-	render();
-	return $rows;
 };
 
 AknEditorApp.prototype.renderElementListEditor = function ( wrapperRef, rowTagNames, fieldDefs, onChange ) {
@@ -1032,7 +987,7 @@ AknEditorApp.prototype.buildNavigationPane = function () {
 
 AknEditorApp.prototype.buildElementsPanel = function () {
 	var app = this;
-	var types = this.structureTypes;
+	var types = this.displayTypes;
 	var $buttons = $( '<div>' ).addClass( 'akn-editor-elements-buttons' );
 	types.forEach( function ( type ) {
 		var button = new OO.ui.ButtonWidget( { label: elementTypeLabel( type ) } );
@@ -1094,11 +1049,9 @@ AknEditorApp.prototype.buildSelectedElementPanel = function () {
 			app.renderDocument();
 		}, 800 );
 
-		var typeInput = new OO.ui.TextInputWidget( { value: outlineLabel( el ), disabled: true } );
-		var numInput = new OO.ui.TextInputWidget( { value: app.childText( el, 'num' ) } );
-		numInput.on( 'change', function ( value ) {
-			app.setChildText( el, 'num', value );
-			rerender();
+		var typeInput = new OO.ui.TextInputWidget( {
+			value: elementTypeLabel( el.localName ) + ' — ' + app.childText( el, 'num' ),
+			disabled: true
 		} );
 		var headingInput = new OO.ui.TextInputWidget( { value: app.childText( el, 'heading' ) } );
 		headingInput.on( 'change', function ( value ) {
@@ -1106,6 +1059,14 @@ AknEditorApp.prototype.buildSelectedElementPanel = function () {
 			rerender();
 		} );
 
+		var upButton = new OO.ui.ButtonWidget( { icon: 'upTriangle', label: mw.msg( 'aknedit-tool-moveup' ) } );
+		upButton.on( 'click', function () {
+			app.moveElement( el, -1 );
+		} );
+		var downButton = new OO.ui.ButtonWidget( { icon: 'downTriangle', label: mw.msg( 'aknedit-tool-movedown' ) } );
+		downButton.on( 'click', function () {
+			app.moveElement( el, 1 );
+		} );
 		var removeButton = new OO.ui.ButtonWidget( {
 			label: mw.msg( 'aknedit-tool-remove' ), icon: 'trash', flags: [ 'destructive' ]
 		} );
@@ -1115,9 +1076,10 @@ AknEditorApp.prototype.buildSelectedElementPanel = function () {
 
 		$content.append(
 			new OO.ui.FieldLayout( typeInput, { label: mw.msg( 'aknedit-field-type' ), align: 'top' } ).$element,
-			new OO.ui.FieldLayout( numInput, { label: mw.msg( 'aknedit-field-num' ), align: 'top' } ).$element,
 			new OO.ui.FieldLayout( headingInput, { label: mw.msg( 'aknedit-field-heading' ), align: 'top' } ).$element,
-			removeButton.$element
+			$( '<div>' ).addClass( 'akn-editor-selected-actions' ).append(
+				upButton.$element, downButton.$element, removeButton.$element
+			)
 		);
 	}
 
@@ -1229,15 +1191,19 @@ AknEditorApp.prototype.serializeFullDocument = function () {
 
 AknEditorApp.prototype.save = function ( summary ) {
 	var xml = this.serializeFullDocument();
-	return new mw.Api().postWithToken( 'csrf', {
+	var params = {
 		action: 'edit',
 		title: mw.config.get( 'wgAknEditorTitle' ),
 		text: xml,
 		contentmodel: 'akn-xml',
 		contentformat: 'application/xml',
-		baserevid: mw.config.get( 'wgAknEditorBaseRevId' ),
 		summary: summary
-	} );
+	};
+	var baseRevId = mw.config.get( 'wgAknEditorBaseRevId' );
+	if ( baseRevId ) {
+		params.baserevid = baseRevId;
+	}
+	return new mw.Api().postWithToken( 'csrf', params );
 };
 
 AknEditorApp.prototype.compareChanges = function () {
@@ -1335,14 +1301,12 @@ AknEditorApp.prototype.mount = function ( $overlay ) {
 	var metadataDialog = new MetadataDialog();
 	var refDialog = new RefDialog();
 	var attrValueDialog = new AttrValueDialog();
-	var propertiesDialog = new PropertiesDialog();
-	windowManager.addWindows( [ saveDialog, metadataDialog, refDialog, attrValueDialog, propertiesDialog ] );
+	windowManager.addWindows( [ saveDialog, metadataDialog, refDialog, attrValueDialog ] );
 	app.windowManager = windowManager;
 	app.saveDialog = saveDialog;
 	app.metadataDialog = metadataDialog;
 	app.refDialog = refDialog;
 	app.attrValueDialog = attrValueDialog;
-	app.propertiesDialog = propertiesDialog;
 	app.metaOverlay = metadataDialog.$overlay;
 
 	function refreshMetaFields() {
