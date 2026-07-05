@@ -3,11 +3,6 @@
 var AKN_NS = 'http://docs.oasis-open.org/legaldocml/ns/akn/3.0';
 var ROOT_TYPES = [ 'act', 'bill', 'doc', 'officialGazette' ];
 
-/**
- * @param {Element} parent
- * @param {string} localName
- * @return {Element|null} First direct child with this local name, or null.
- */
 function firstChild( parent, localName ) {
 	if ( !parent ) {
 		return null;
@@ -20,14 +15,6 @@ function firstChild( parent, localName ) {
 	return null;
 }
 
-/**
- * Mirrors AknDom::findRoot() server-side: the true document root is a
- * direct child of <akomaNtoso>, never a nested one (e.g. inside a
- * gazette's <component>).
- *
- * @param {XMLDocument} dom
- * @return {Element|null}
- */
 function findRoot( dom ) {
 	var akomaNtoso = dom.documentElement;
 	if ( !akomaNtoso ) {

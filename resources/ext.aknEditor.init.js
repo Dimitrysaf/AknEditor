@@ -5,8 +5,10 @@ $( function () {
 	}
 	var app = new AknEditorApp( mw.config.get( 'wgAknEditorXml' ) || '' );
 	if ( !app.root ) {
-		$root.text( 'Unable to parse this document.' );
+		$root.text( mw.msg( 'aknedit-parse-error' ) );
 		return;
 	}
-	app.mount( $root );
+	var $overlay = $( '<div>' ).addClass( 'akn-editor-overlay' );
+	$( document.body ).addClass( 'akn-editor-open' ).append( $overlay );
+	app.mount( $overlay );
 } );

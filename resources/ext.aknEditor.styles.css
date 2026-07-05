@@ -1,168 +1,258 @@
-/*
- * Sticky topbar, mirroring VE's own .ve-ui-positionedTargetToolbar-floatable
- * (lib/ve/src/ui/styles/ve.ui.Toolbar.less): `position: sticky; top: 0;` is what makes it read
- * as a fixed application bar instead of a block sitting in the normal page flow. The tools/
- * actions split inside is handled by OOUI's own .oo-ui-toolbar-tools / .oo-ui-toolbar-actions
- * floats (built in, via `{ actions: true }` on the Toolbar) — no custom flex layout needed here.
- */
-.akn-editor-toolbar {
-	position: sticky;
-	top: 0;
-	z-index: 2;
-	margin-bottom: 1em;
+body.akn-editor-open {
+	overflow: hidden;
 }
 
-body.action-aknedit #mw-content-text {
-	margin: 0;
+body.akn-editor-open > .oo-ui-windowManager,
+body.akn-editor-open #mw-teleport-target {
+	position: relative;
+	z-index: 600;
 }
 
-/*
- * Save/Cancel must fill the toolbar's full height, like VE's own save button, instead of
- * floating at their own (shorter) natural button height inside a taller bar. `.oo-ui-toolbar-bar`
- * and `.oo-ui-toolbar-actions` are float-based by default (see oojs-ui-toolbars.js); scoped to
- * our own toolbar only, not overridden globally, so other OOUI toolbars on the page are unaffected.
- */
-.akn-editor-toolbar .oo-ui-toolbar-bar {
+.akn-editor-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 500;
 	display: flex;
-	align-items: stretch;
+	flex-direction: column;
+	background-color: var( --background-color-base, #fff );
 }
 
-.akn-editor-toolbar .oo-ui-toolbar-actions {
-	display: flex;
-	align-items: stretch;
-	float: none;
-	margin-left: auto;
-}
-
-.akn-editor-toolbar .oo-ui-toolbar-actions .oo-ui-buttonGroupWidget {
-	display: flex;
-	height: 100%;
-	margin: 0;
-}
-
-.akn-editor-toolbar .oo-ui-toolbar-actions .oo-ui-buttonElement {
-	display: flex;
-}
-
-.akn-editor-toolbar .oo-ui-toolbar-actions .oo-ui-buttonElement-button {
-	height: 100%;
+.akn-editor-header {
+	flex: 0 0 auto;
 	display: flex;
 	align-items: center;
+	gap: 1em;
+	padding: 0.4em 1em;
+	border-bottom: 1px solid var( --border-color-base, #a2a9b1 );
+	background-color: var( --background-color-neutral-subtle, #f8f9fa );
 }
 
-.akn-editor-toolbar .oo-ui-toolbar-tools > .oo-ui-toolGroup + .oo-ui-toolGroup,
-.akn-editor-toolbar .oo-ui-barToolGroup-tools > .oo-ui-tool + .oo-ui-tool,
-.akn-editor-toolbar .oo-ui-toolbar-actions .oo-ui-buttonElement + .oo-ui-buttonElement {
-	border-inline-start: 1px solid var( --border-color-subtle, #c8ccd1 );
-}
-
-/*
- * Split workspace: outline on the left, element pane on the right. The pane column only
- * appears once `.akn-editor-workspace-split` is toggled on (a row selected) — before that,
- * the outline alone takes the full width, per explicit feedback that the pane should *open*
- * on selection rather than always occupy half the screen.
- */
-.akn-editor-workspace {
-	display: flex;
-	align-items: flex-start;
-	gap: 2em;
-}
-
-.akn-editor-outline-col {
-	flex: 1 1 100%;
+.akn-editor-header-title {
+	flex: 1 1 auto;
 	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
 }
 
-.akn-editor-workspace-split .akn-editor-outline-col {
-	flex: 0 1 40%;
+.akn-editor-header-alias {
+	margin-inline-start: 0.75em;
+	color: var( --color-subtle, #54595d );
 }
 
-.akn-editor-element-pane {
-	display: none;
-	flex: 1 1 60%;
-	min-width: 0;
-	border-left: 1px solid var( --border-color-base, #a2a9b1 );
-	padding-left: 2em;
-	/* Stays put below the sticky toolbar while the outline column scrolls past it (see the
-	 * `--akn-editor-toolbar-height` variable set from JS in ext.aknEditor.app.js#mount). Its
-	 * own content scrolls internally rather than growing taller than the viewport. */
-	position: sticky;
-	top: var( --akn-editor-toolbar-height, 0 );
-	max-height: calc( 100vh - var( --akn-editor-toolbar-height, 0px ) - 2em );
-	overflow-y: auto;
-}
-
-.akn-editor-workspace-split .akn-editor-element-pane {
-	display: block;
-}
-
-.akn-editor-element-pane-header {
-	margin-bottom: 0.5em;
-}
-
-.akn-editor-element-pane-header-actions {
+.akn-editor-header-actions {
+	flex: 0 0 auto;
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	margin-top: 0.25em;
-}
-
-.akn-editor-element-pane-header-actions .oo-ui-buttonGroupWidget {
-	display: flex;
 	gap: 0.25em;
 }
 
-.akn-editor-element-pane-title {
-	margin: 0;
+.akn-editor-main {
+	flex: 1 1 auto;
+	display: flex;
+	min-height: 0;
 }
 
-/* One outline row per line, divider-separated, with a drag handle at the edge. */
+.akn-editor-pane {
+	flex: 0 0 19em;
+	min-width: 15em;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	border-inline-end: 1px solid var( --border-color-subtle, #c8ccd1 );
+	background-color: var( --background-color-neutral-subtle, #f8f9fa );
+}
+
+.akn-editor-outline-scroll {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	padding: 0.75em;
+}
+
+.akn-editor-selected {
+	flex: 0 0 auto;
+	max-height: 45%;
+	overflow-y: auto;
+	padding: 0.75em;
+	border-top: 1px solid var( --border-color-base, #a2a9b1 );
+	background-color: var( --background-color-base, #fff );
+}
+
+.akn-editor-selected-content {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25em;
+}
+
+.akn-editor-elements {
+	flex: 0 0 11em;
+	overflow-y: auto;
+	padding: 0.75em;
+	border-inline-end: 1px solid var( --border-color-subtle, #c8ccd1 );
+	background-color: var( --background-color-neutral-subtle, #f8f9fa );
+}
+
+.akn-editor-elements-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.akn-editor-elements-buttons {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35em;
+	margin-top: 0.5em;
+}
+
+.akn-editor-elements-buttons .oo-ui-buttonElement {
+	width: 100%;
+}
+
+.akn-editor-elements-expand {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: flex-start;
+	padding: 0.5em 0.1em;
+	border-inline-end: 1px solid var( --border-color-subtle, #c8ccd1 );
+	background-color: var( --background-color-neutral-subtle, #f8f9fa );
+}
+
+.akn-editor-docwrap {
+	position: relative;
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+}
+
+.akn-editor-document {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: auto;
+	padding: 1.5em;
+	background-color: var( --background-color-interactive, #eaecf0 );
+}
+
+.akn-editor-document.akn-editor-rendering {
+	cursor: progress;
+	opacity: 0.7;
+}
+
+.akn-editor-pages {
+	width: max-content;
+	margin: 0 auto;
+}
+
+.akn-editor-page {
+	box-sizing: border-box;
+	width: 210mm;
+	height: 297mm;
+	overflow: hidden;
+	margin: 0 auto 1.2em;
+	padding: 20mm 25mm;
+	background-color: #fff;
+	color: #202122;
+	box-shadow: 0 1px 4px rgba( 0, 0, 0, 0.35 );
+}
+
+.akn-editor-page-editing {
+	height: auto;
+	min-height: 297mm;
+	overflow: visible;
+}
+
+.akn-editor-page-content {
+	min-height: 100%;
+}
+
+.akn-editor-page [id],
+.akn-editor-page [data-akn-part-of] {
+	cursor: pointer;
+}
+
+.akn-editor-target-selected {
+	outline: 1px dashed var( --border-color-progressive, #36c );
+	outline-offset: 3px;
+}
+
+.akn-editor-hidden-part {
+	display: none !important;
+}
+
+.akn-editor-inline {
+	margin: 0.75em 0;
+	border: 1px solid var( --border-color-progressive, #36c );
+	border-radius: 2px;
+	background-color: var( --background-color-base, #fff );
+}
+
+.akn-editor-inline-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.25em;
+	padding: 0.3em 0.5em;
+	border-bottom: 1px solid var( --border-color-subtle, #c8ccd1 );
+	background-color: var( --background-color-neutral-subtle, #f8f9fa );
+}
+
+.akn-editor-inline .ck.ck-editor__top {
+	position: sticky;
+	top: 0;
+	z-index: 20;
+}
+
+.akn-editor-zoom {
+	position: absolute;
+	right: 2em;
+	bottom: 1.5em;
+	display: flex;
+	align-items: center;
+	gap: 0.25em;
+	padding: 0.25em 0.5em;
+	border: 1px solid var( --border-color-base, #a2a9b1 );
+	border-radius: 4px;
+	background-color: var( --background-color-base, #fff );
+	box-shadow: 0 1px 3px rgba( 0, 0, 0, 0.2 );
+}
+
+.akn-editor-zoom-label {
+	min-width: 3em;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+
+.akn-editor-pane-heading {
+	margin: 1.25em 0 0.5em;
+	font-size: 0.95em;
+}
+
+.akn-editor-pane-heading:first-child {
+	margin-top: 0;
+}
+
 .akn-editor-outline-row {
 	display: flex;
 	align-items: center;
 	gap: 0.5em;
-	padding: 0.5em 0.25em;
-	border-bottom: 1px solid #eaecf0;
+	padding: 0.4em 0.25em;
+	border-bottom: 1px solid var( --border-color-subtle, #eaecf0 );
 	cursor: pointer;
 }
 
 .akn-editor-outline-row:hover {
-	background-color: var( --background-color-interactive-subtle, #f8f9fa );
+	background-color: var( --background-color-interactive-subtle, #eaecf0 );
 }
 
 .akn-editor-outline-row-active {
 	background-color: var( --background-color-progressive-subtle, #eaf3ff );
 }
 
-.akn-editor-outline-row-handle {
-	flex-shrink: 0;
-	display: inline-flex;
-	width: 1.14em;
-	height: 1.14em;
-	color: #72777d;
-	cursor: grab;
-	/* Only shown on hover (or while actually being dragged) — invisible rather than
-	 * display:none so the row's layout width doesn't shift when it appears. */
-	visibility: hidden;
-}
-
-.akn-editor-outline-row:hover .akn-editor-outline-row-handle,
-.akn-editor-outline-row.oo-ui-draggableElement-placeholder .akn-editor-outline-row-handle {
-	visibility: visible;
-}
-
-.akn-editor-outline-row-handle svg {
-	width: 100%;
-	height: 100%;
-	fill: currentColor;
-}
-
 .akn-editor-outline-row-label {
 	flex: 1 1 auto;
 	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	overflow-wrap: break-word;
+	line-height: 1.3;
 }
 
 .akn-editor-outline-row-collapse {
@@ -185,12 +275,29 @@ body.action-aknedit #mw-content-text {
 	pointer-events: none;
 }
 
+.akn-editor-gazette-workspace {
+	max-width: 60em;
+	margin: 0 auto;
+	padding: 1em;
+	background-color: var( --background-color-base, #fff );
+}
+
 .akn-editor-dialog-heading {
 	margin: 1.5em 0 0.5em 0;
 }
 
 .akn-editor-dialog-heading:first-child {
 	margin-top: 0;
+}
+
+.akn-editor-meta-grid > .oo-ui-fieldsetLayout-group {
+	display: grid;
+	grid-template-columns: repeat( auto-fill, minmax( 16em, 1fr ) );
+	column-gap: 2em;
+}
+
+.akn-editor-meta-grid .oo-ui-fieldLayout {
+	margin-top: 1em;
 }
 
 .akn-editor-attr-rows {
@@ -233,10 +340,6 @@ body.action-aknedit #mw-content-text {
 	overflow-x: auto;
 }
 
-.akn-editor-inline-toolbar {
-	margin-bottom: 0.25em;
-}
-
 .akn-editor-ref-picker-heading {
 	padding: 0.5em 0.75em 0.25em;
 	font-weight: bold;
@@ -247,23 +350,38 @@ body.action-aknedit #mw-content-text {
 	margin: 0.25em 0.75em;
 }
 
-.akn-editor-richtext {
-	min-height: 10em;
-	padding: 0.5em;
-	border: 1px solid var( --border-color-base, #a2a9b1 );
-	border-radius: 2px;
+.akn-editor-item {
+	display: flex;
+	gap: 0.4em;
 }
 
-.akn-editor-richtext:focus {
+.akn-editor-item > .akn-num {
+	flex: 0 0 auto;
+	min-width: 1.5em;
+}
+
+.akn-editor-item-body {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.akn-editor-highlight {
 	outline: 2px solid var( --border-color-progressive, #36c );
-	outline-offset: -1px;
+	outline-offset: 2px;
+	transition: outline-color 1.5s ease-out;
 }
 
-.akn-editor-richtext-block {
+.akn-editor-raw {
 	margin: 0.25em 0;
 	padding: 0.5em;
 	border: 1px dashed var( --border-color-base, #a2a9b1 );
 	background-color: var( --background-color-interactive-subtle, #f8f9fa );
 	color: var( --color-subtle, #54595d );
 	cursor: not-allowed;
+}
+
+span.akn-editor-raw {
+	display: inline-block;
+	margin: 0;
+	padding: 0 0.3em;
 }
