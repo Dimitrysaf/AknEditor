@@ -18,6 +18,7 @@ function AknEditorApp( xmlText ) {
 	this.pendingSelectEid = null;
 	this.renderToken = 0;
 	this.zoom = 1;
+	this.dirty = false;
 
 	this.aknInlineToolbarPlugin = buildAknInlineToolbarPlugin( this );
 	this.aknRefPickerPlugin = buildAknRefPickerPlugin( this );
@@ -32,6 +33,10 @@ function AknEditorApp( xmlText ) {
 
 AknEditorApp.prototype.isStructural = function ( el ) {
 	return !!el && el.nodeType === 1 && this.displayTypes.indexOf( el.localName ) !== -1;
+};
+
+AknEditorApp.prototype.markDirty = function () {
+	this.dirty = true;
 };
 
 AknEditorApp.prototype.byEid = function ( eid ) {
@@ -218,6 +223,7 @@ AknEditorApp.prototype.buildMetaFields = function () {
 		widget.setRequired( !!required );
 		widget.on( 'change', function ( value ) {
 			field.set( value );
+			app.markDirty();
 		} );
 		fields.push( new OO.ui.FieldLayout( widget, {
 			label: mw.msg( msgKey ),
@@ -230,6 +236,7 @@ AknEditorApp.prototype.buildMetaFields = function () {
 		widget.setRequired( !!required );
 		widget.on( 'change', function ( value ) {
 			field.set( value );
+			app.markDirty();
 		} );
 		fields.push( new OO.ui.FieldLayout( widget, {
 			label: mw.msg( msgKey ),
@@ -242,6 +249,7 @@ AknEditorApp.prototype.buildMetaFields = function () {
 		widget.setRequired( !!required );
 		widget.on( 'change', function ( value ) {
 			field.set( value );
+			app.markDirty();
 		} );
 		fields.push( new OO.ui.FieldLayout( widget, {
 			label: mw.msg( msgKey ),
@@ -342,7 +350,36 @@ AknEditorApp.prototype.nextEid = function ( type ) {
 AknEditorApp.prototype.refreshOutline = function () {
 	var app = this;
 	var group = this.outlineGroup;
-	if ( !group || !this.body ) {
+	if ( !group ) {
+		return;
+	}
+	if ( this.isGazette ) {
+		group.clearItems();
+		group.addItems( ( this.collectionBodyEl( false ) ?
+			Array.prototype.slice.call( this.collectionBodyEl( false ).children ) : [] )
+			.filter( function ( child ) {
+				return child.localName === 'documentRef' || child.localName === 'component';
+			} )
+			.map( function ( child, index ) {
+				var label = child.localName === 'documentRef' ?
+					( child.getAttribute( 'showAs' ) || child.getAttribute( 'href' ) || 'documentRef' ) :
+					app.gazetteComponentLabel( child );
+				var row = new OutlineRow( child, label, 0, false, false );
+				row.on( 'select', function () {
+					var item = app.$pages.find( '.akn-gazette-item' ).eq( index )[ 0 ];
+					if ( item ) {
+						item.scrollIntoView( { behavior: 'smooth', block: 'center' } );
+						item.classList.add( 'akn-editor-highlight' );
+						setTimeout( function () {
+							item.classList.remove( 'akn-editor-highlight' );
+						}, 1500 );
+					}
+				} );
+				return row;
+			} ) );
+		return;
+	}
+	if ( !this.body ) {
 		return;
 	}
 	var rows = [];
@@ -480,6 +517,7 @@ AknEditorApp.prototype.setChildText = function ( el, tag, value ) {
 		}
 	}
 	child.textContent = value;
+	this.markDirty();
 };
 
 AknEditorApp.prototype.paginate = function ( blocks ) {
@@ -679,6 +717,7 @@ AknEditorApp.prototype.commitInlineEditor = function ( rerender ) {
 		return;
 	}
 	aknEditorListsToAkn( parsed, parsed.documentElement );
+	this.markDirty();
 	var parent = ie.xmlEl.parentNode;
 	Array.prototype.slice.call( parsed.documentElement.childNodes ).forEach( function ( node ) {
 		parent.insertBefore( app.doc.importNode( node, true ), ie.xmlEl );
@@ -781,6 +820,7 @@ AknEditorApp.prototype.insertElement = function ( type ) {
 	}
 	var point = this.insertionPointFor( type );
 	point.parent.insertBefore( el, point.before );
+	this.markDirty();
 	aknAutoNumber( this.doc, this.body );
 	var eid = el.getAttribute( 'eId' );
 	this.pendingSelectEid = eid;
@@ -803,6 +843,7 @@ AknEditorApp.prototype.moveElement = function ( xmlEl, direction ) {
 		return;
 	}
 	parent.insertBefore( xmlEl, direction < 0 ? sibling : sibling.nextSibling );
+	this.markDirty();
 	aknAutoNumber( this.doc, this.body );
 	this.pendingSelectEid = xmlEl.getAttribute( 'eId' );
 	this.renderDocument();
@@ -815,6 +856,7 @@ AknEditorApp.prototype.removeElement = function ( xmlEl ) {
 			return;
 		}
 		xmlEl.parentNode.removeChild( xmlEl );
+		app.markDirty();
 		if ( app.selectedEl === xmlEl ) {
 			app.selectedEl = null;
 		}
@@ -833,6 +875,7 @@ AknEditorApp.prototype.renderElementListEditor = function ( wrapperRef, rowTagNa
 	}
 
 	function notify() {
+		app.markDirty();
 		if ( onChange ) {
 			onChange();
 		}
@@ -1219,21 +1262,33 @@ AknEditorApp.prototype.compareChanges = function () {
 	} );
 };
 
-AknEditorApp.prototype.previewRender = function () {
+AknEditorApp.prototype.openPreviewTab = function () {
 	var xml = this.serializeFullDocument();
-	return new mw.Api().post( {
-		action: 'parse',
-		formatversion: 2,
-		title: mw.config.get( 'wgAknEditorTitle' ),
-		text: xml,
-		contentmodel: 'akn-xml',
-		contentformat: 'application/xml',
-		prop: 'text'
-	} );
+	this.renderDocument();
+	var $form = $( '<form>' ).attr( {
+		method: 'post',
+		target: '_blank',
+		action: mw.util.getUrl( mw.config.get( 'wgAknEditorTitle' ), { action: 'aknedit' } )
+	} ).append(
+		$( '<input>' ).attr( { type: 'hidden', name: 'wpAknPreview', value: '1' } ),
+		$( '<textarea>' ).attr( 'name', 'wpAknXml' ).val( xml ).hide()
+	).appendTo( document.body );
+	$form.trigger( 'submit' );
+	$form.remove();
 };
 
 AknEditorApp.prototype.exitEditor = function () {
-	location.href = mw.util.getUrl( mw.config.get( 'wgAknEditorTitle' ) );
+	var app = this;
+	if ( !this.dirty ) {
+		location.href = mw.util.getUrl( mw.config.get( 'wgAknEditorTitle' ) );
+		return;
+	}
+	OO.ui.confirm( mw.msg( 'aknedit-close-confirm' ) ).done( function ( confirmed ) {
+		if ( confirmed ) {
+			app.dirty = false;
+			location.href = mw.util.getUrl( mw.config.get( 'wgAknEditorTitle' ) );
+		}
+	} );
 };
 
 AknEditorApp.prototype.buildHeader = function () {

@@ -100,38 +100,28 @@ function buildAknArticlePlugin( app ) {
 			conversion.for( 'editingDowncast' ).elementToElement( {
 				model: 'akn_article',
 				view: function ( modelElement, api ) {
-					var el = api.writer.createContainerElement( 'section', {
+					return api.writer.createContainerElement( 'section', {
 						class: 'akn-article akn-block',
 						'data-akn-eid': modelElement.getAttribute( 'eId' ) || ''
 					} );
-					return CKE.toWidget( el, api.writer, { label: elementTypeLabel( 'article' ) } );
 				}
 			} );
 			conversion.for( 'editingDowncast' ).elementToElement( {
 				model: 'akn_article_num',
 				view: function ( modelElement, api ) {
-					return CKE.toWidgetEditable(
-						api.writer.createEditableElement( 'h6', { class: 'akn-designation' } ),
-						api.writer
-					);
+					return api.writer.createContainerElement( 'h6', { class: 'akn-designation' } );
 				}
 			} );
 			conversion.for( 'editingDowncast' ).elementToElement( {
 				model: 'akn_article_heading',
 				view: function ( modelElement, api ) {
-					return CKE.toWidgetEditable(
-						api.writer.createEditableElement( 'div', { class: 'akn-rubric' } ),
-						api.writer
-					);
+					return api.writer.createContainerElement( 'div', { class: 'akn-rubric' } );
 				}
 			} );
 			conversion.for( 'editingDowncast' ).elementToElement( {
 				model: 'akn_article_body',
 				view: function ( modelElement, api ) {
-					return CKE.toWidgetEditable(
-						api.writer.createEditableElement( 'div', { class: 'akn-editor-article-body' } ),
-						api.writer
-					);
+					return api.writer.createContainerElement( 'div', { class: 'akn-editor-article-body' } );
 				}
 			} );
 		}
@@ -228,7 +218,7 @@ function createAknElementEditor( app, container, elementXml ) {
 					'aknInsertQuotedStructure' ] ),
 			shouldNotGroupWhenFull: false
 		},
-		table: { contentToolbar: [ 'tableColumn', 'tableRow', 'mergeTableCells', 'toggleTableCaption' ] }
+		table: { contentToolbar: [ 'tableColumn', 'tableRow', 'mergeTableCells', 'toggleTableCaption', 'aknDeleteTable' ] }
 	} ).then( function ( editor ) {
 		editor.data.processor = new AknDataProcessor( editor.editing.view.document );
 

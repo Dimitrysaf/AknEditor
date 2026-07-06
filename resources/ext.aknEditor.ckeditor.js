@@ -18,13 +18,33 @@ var AKN_BUTTON_ICONS = {
 	note: CKE.IconInfo
 };
 
+var AKN_FORMAT_NAMES = [ 'b', 'i', 'u', 'sup', 'sub' ];
+
+function aknSemanticNames() {
+	var order = [ 'term', 'def', 'entity', 'organization', 'person', 'role', 'location',
+		'concept', 'object', 'quantity', 'quotedtext', 'date', 'mref', 'authorialnote',
+		'note', 'ins', 'del', 'mod' ];
+	var registered = INLINE_TAGS_PRIMARY.concat( INLINE_TAGS_MORE )
+		.filter( function ( entry ) { return !entry.picker && AKN_FORMAT_NAMES.indexOf( entry.name ) === -1; } )
+		.map( function ( entry ) { return entry.name; } );
+	return order.filter( function ( name ) {
+		return registered.indexOf( name ) !== -1;
+	} ).concat( registered.filter( function ( name ) {
+		return order.indexOf( name ) === -1;
+	} ) );
+}
+
 function aknConfigureButton( button, entry ) {
 	var icon = AKN_BUTTON_ICONS[ entry.name ];
-	if ( icon ) {
+	if ( AKN_FORMAT_NAMES.indexOf( entry.name ) !== -1 && icon ) {
 		button.set( { label: mw.msg( entry.msgKey ), icon: icon, tooltip: true } );
-	} else {
-		button.set( { label: mw.msg( entry.msgKey ), withText: true, tooltip: true } );
+		return;
 	}
+	var config = { label: mw.msg( entry.msgKey ), withText: true, tooltip: true };
+	if ( icon ) {
+		config.icon = icon;
+	}
+	button.set( config );
 }
 
 function aknEscapeText( text ) {
@@ -433,10 +453,46 @@ function buildAknInlineToolbarPlugin( app ) {
 					return button;
 				} );
 			} );
+
+			editor.ui.componentFactory.add( 'aknSemantic', function ( locale ) {
+				var dropdown = CKE.createDropdown( locale );
+				dropdown.buttonView.set( {
+					label: mw.msg( 'aknedit-inline-semantic' ),
+					icon: CKE.IconMarker,
+					tooltip: true
+				} );
+				var buttons = aknSemanticNames().map( function ( name ) {
+					return editor.ui.componentFactory.create( 'akn-' + name );
+				} );
+				CKE.addToolbarToDropdown( dropdown, buttons, {
+					isVertical: true,
+					class: 'akn-editor-semantic-dropdown'
+				} );
+				return dropdown;
+			} );
 		}
 	}
 
 	return AknInlineToolbar;
+}
+
+class AknDeleteTableCommand extends CKE.Command {
+	refresh() {
+		var position = this.editor.model.document.selection.getFirstPosition();
+		this.isEnabled = !!position && !!position.findAncestor( 'table' );
+	}
+
+	execute() {
+		var editor = this.editor;
+		var position = editor.model.document.selection.getFirstPosition();
+		var table = position && position.findAncestor( 'table' );
+		if ( !table ) {
+			return;
+		}
+		editor.model.change( function ( writer ) {
+			writer.remove( table );
+		} );
+	}
 }
 
 function buildAknTablePlugin() {
@@ -448,6 +504,16 @@ function buildAknTablePlugin() {
 		init() {
 			var editor = this.editor;
 			var conversion = editor.conversion;
+
+			editor.commands.add( 'aknDeleteTable', new AknDeleteTableCommand( editor ) );
+			editor.ui.componentFactory.add( 'aknDeleteTable', function ( locale ) {
+				var command = editor.commands.get( 'aknDeleteTable' );
+				var button = new CKE.ButtonView( locale );
+				button.set( { label: mw.msg( 'aknedit-table-delete' ), icon: CKE.IconRemove, tooltip: true } );
+				button.bind( 'isEnabled' ).to( command, 'isEnabled' );
+				button.on( 'execute', function () { editor.execute( 'aknDeleteTable' ); } );
+				return button;
+			} );
 
 			conversion.for( 'dataDowncast' ).elementToElement( {
 				model: 'table',
@@ -751,7 +817,7 @@ function buildAknQuotedStructurePlugin() {
 }
 
 function aknInlineToolbarItemNames() {
-	return INLINE_TAGS_PRIMARY.concat( INLINE_TAGS_MORE )
-		.filter( function ( entry ) { return !entry.picker; } )
-		.map( function ( entry ) { return 'akn-' + entry.name; } );
+	return AKN_FORMAT_NAMES.map( function ( name ) {
+		return 'akn-' + name;
+	} ).concat( [ 'aknSemantic' ] );
 }
