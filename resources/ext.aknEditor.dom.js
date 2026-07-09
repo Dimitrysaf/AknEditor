@@ -1,7 +1,14 @@
 'use strict';
 
-var AKN_NS = 'http://docs.oasis-open.org/legaldocml/ns/akn/3.0';
-var ROOT_TYPES = [ 'act', 'bill', 'doc', 'officialGazette' ];
+// The AKN namespace and the list of document-type roots are NOT defined here:
+// they come from wgAknVocabulary, which AknRenderer derives from the schema
+// (schema/akomantoso30.xsd — the single source of truth). Hardcoding them here
+// is exactly the drift we must avoid; the string literal below is only a
+// last-resort fallback for the (unexpected) case where the config is absent,
+// kept equal to the schema's declared namespace (AknSchema::NS).
+var AKN_VOCAB = mw.config.get( 'wgAknVocabulary' ) || {};
+var AKN_NS = AKN_VOCAB.ns || 'http://docs.oasis-open.org/legaldocml/ns/akn/3.0/WD17';
+var ROOT_TYPES = AKN_VOCAB.documentTypes || [ 'act', 'bill', 'doc', 'officialGazette' ];
 
 function firstChild( parent, localName ) {
 	if ( !parent ) {

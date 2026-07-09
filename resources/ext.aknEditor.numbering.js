@@ -1,6 +1,19 @@
 'use strict';
 
-var AKN_DISPLAY_TYPES = [ 'part', 'section', 'subsection', 'chapter', 'subchapter', 'article' ];
+// The division types that carry a display number/heading, ordered outermost
+// first. Derived from wgAknVocabulary.headingLevels (AknRenderer's
+// AknVocabulary::HEADING_LEVELS), so the ordering follows the schema-backed
+// vocabulary rather than a second hardcoded copy. Falls back to the canonical
+// order if the config is somehow absent.
+var AKN_DISPLAY_TYPES = ( function () {
+	var levels = ( mw.config.get( 'wgAknVocabulary' ) || {} ).headingLevels;
+	if ( !levels || !Object.keys( levels ).length ) {
+		return [ 'part', 'section', 'subsection', 'chapter', 'subchapter', 'article' ];
+	}
+	return Object.keys( levels ).sort( function ( a, b ) {
+		return levels[ a ] - levels[ b ];
+	} );
+}() );
 
 var GREEK_ORDINALS = [ 'Πρώτο', 'Δεύτερο', 'Τρίτο', 'Τέταρτο', 'Πέμπτο', 'Έκτο', 'Έβδομο', 'Όγδοο',
 	'Ένατο', 'Δέκατο', 'Ενδέκατο', 'Δωδέκατο', 'Δέκατο Τρίτο', 'Δέκατο Τέταρτο', 'Δέκατο Πέμπτο',
@@ -267,29 +280,4 @@ function aknEditorListsToAkn( doc, containerEl ) {
 			article.removeChild( child );
 		} );
 	} );
-}
-
-function aknSkeletonDocument() {
-	return '<akomaNtoso xmlns="' + AKN_NS + '">' +
-		'<act name="nomos">' +
-		'<meta>' +
-		'<identification source="#source">' +
-		'<FRBRWork>' +
-		'<FRBRalias value=""/>' +
-		'<FRBRnumber value=""/>' +
-		'<FRBRdate name="enacted" date=""/>' +
-		'<FRBRcountry value="gr"/>' +
-		'</FRBRWork>' +
-		'<FRBRExpression><FRBRlanguage language="ell"/></FRBRExpression>' +
-		'</identification>' +
-		'</meta>' +
-		'<body>' +
-		'<article eId="art_1">' +
-		'<num>Άρθρο 1</num>' +
-		'<heading></heading>' +
-		'<paragraph eId="art_1__para_1"><num>1.</num><content><p></p></content></paragraph>' +
-		'</article>' +
-		'</body>' +
-		'</act>' +
-		'</akomaNtoso>';
 }

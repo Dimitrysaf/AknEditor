@@ -10,6 +10,7 @@ namespace MediaWiki\Extension\AknEditor;
 
 use MediaWiki\Actions\FormlessAction;
 use MediaWiki\Extension\AknRenderer\AknContent;
+use MediaWiki\Extension\AknRenderer\AknSkeleton;
 use MediaWiki\Html\Html;
 use MediaWiki\MediaWikiServices;
 use MediaWiki\Parser\ParserOptions;
@@ -55,21 +56,21 @@ class AknEditAction extends FormlessAction
 
 		$content = $this->getWikiPage()->getContent();
 		$xml = $content !== null ? $content->getText() : '';
-
-		$output = $this->getOutput();
-		$output->addModules(['ext.aknEditor.app']);
-		$output->addJsConfigVars([
-			'wgAknEditorXml' => $xml,
-			'wgAknEditorTitle' => $title->getPrefixedText(),
-			'wgAknEditorBaseRevId' => $this->getWikiPage()->getLatest(),
-		]);
-
-		$html = '';
-		if (!$this->getUser()->isNamed()) {
-			$html .= Html::warningBox($this->msg('aknedit-anon-warning')->parse());
+		if (trim($xml) === '') {
+			// A blank or not-yet-created page: open the editor on a fresh
+			// schema-valid νόμος seed (AknSkeleton) rather than an empty
+			// document. Guarantees validity and the correct namespace — the
+			// editor no longer builds a skeleton client-side.
+			$xml = AknSkeleton::build([]);
 		}
-		$html .= Html::element('div', ['id' => 'akn-editor-root']);
-		return $html;
+
+		return EditorMount::addTo(
+			$this->getOutput(),
+			$xml,
+			$title->getPrefixedText(),
+			$this->getWikiPage()->getLatest(),
+			$this->getUser()->isNamed()
+		);
 	}
 
 	private function renderPreview(string $xml): string

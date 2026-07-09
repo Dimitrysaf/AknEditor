@@ -238,5 +238,11 @@
 	"Hooks": {
 		"SkinTemplateNavigation::Universal": "main"
 	},
+	"SpecialPages": {
+		"NewAkn": "MediaWiki\\Extension\\AknEditor\\SpecialNewAkn"
+	},
+	"ExtensionMessagesFiles": {
+		"AknEditorAliases": "AknEditor.alias.php"
+	},
 	"manifest_version": 2
 }
